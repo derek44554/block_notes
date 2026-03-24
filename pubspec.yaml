@@ -37,7 +37,7 @@ dependencies:
   block_flutter:
     git:
       url: https://github.com/derek44554/block_flutter.git
-      ref: v0.1.1
+      ref: v0.1.0
 
 dev_dependencies:
   flutter_test:

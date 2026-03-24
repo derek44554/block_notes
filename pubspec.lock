@@ -12,9 +12,11 @@ packages:
   block_flutter:
     dependency: "direct main"
     description:
-      path: block_flutter
-      relative: true
-    source: path
+      path: "."
+      ref: "v0.1.0"
+      resolved-ref: e423cc9149e36043d87fe1b966dba46162d22cec
+      url: "https://github.com/derek44554/block_flutter.git"
+    source: git
     version: "0.1.0"
   boolean_selector:
     dependency: transitive
