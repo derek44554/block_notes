@@ -34,6 +34,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   provider: ^6.1.2
   shared_preferences: ^2.3.2
+  url_launcher: ^6.3.1
   block_flutter:
     git:
       url: https://github.com/derek44554/block_flutter.git

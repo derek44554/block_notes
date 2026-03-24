@@ -9,6 +9,7 @@ import '../services/note_service.dart';
 import 'notes_list_screen.dart';
 import 'note_editor_screen.dart';
 import 'setup_screen.dart';
+import 'settings_screen.dart';
 
 class FoldersScreen extends StatefulWidget {
   const FoldersScreen({super.key});
@@ -318,7 +319,7 @@ class _FoldersScreenState extends State<FoldersScreen> {
                       icon: const Icon(Icons.settings_outlined),
                       onPressed: () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const SetupScreen()),
+                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
                       ),
                     ),
                   ],
