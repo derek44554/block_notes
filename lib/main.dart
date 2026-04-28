@@ -1,30 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'core/platform_helper.dart';
 import 'models/note_collection.dart';
 import 'providers/connection_provider.dart';
 import 'providers/collection_provider.dart';
 import 'providers/note_provider.dart';
 import 'screens/folders_screen.dart';
+import 'screens/mac_notes_screen.dart';
 import 'screens/notes_list_screen.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(statusBarColor: Colors.transparent));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
+  );
 
   final connectionProvider = ConnectionProvider();
   final collectionProvider = CollectionProvider();
 
-  await Future.wait([
-    connectionProvider.load(),
-    collectionProvider.load(),
-  ]);
+  await Future.wait([connectionProvider.load(), collectionProvider.load()]);
 
   // 启动前就确定初始路由，避免首页闪烁
   final lastBid = collectionProvider.lastOpenedBid;
   final NoteCollection? lastCollection = lastBid != null
-      ? collectionProvider.collections.where((c) => c.bid == lastBid).firstOrNull
+      ? collectionProvider.collections
+            .where((c) => c.bid == lastBid)
+            .firstOrNull
       : null;
 
   runApp(
@@ -49,6 +52,7 @@ class BlockNotesApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMacOS = PlatformHelper.isMacOS;
     return MaterialApp(
       title: '备忘录',
       debugShowCheckedModeBanner: false,
@@ -58,22 +62,40 @@ class BlockNotesApp extends StatelessWidget {
       onGenerateRoute: (settings) {
         // 必须提供，onGenerateInitialRoutes 才能工作
         if (settings.name == '/') {
-          return MaterialPageRoute(builder: (_) => const FoldersScreen());
+          return MaterialPageRoute(
+            builder: (_) => isMacOS
+                ? MacNotesScreen(initialCollection: initialCollection)
+                : const FoldersScreen(),
+          );
         }
-        if (settings.name == '/collection' && initialCollection != null) {
+        if (!isMacOS &&
+            settings.name == '/collection' &&
+            initialCollection != null) {
           return MaterialPageRoute(
             builder: (_) => NotesListScreen(collection: initialCollection!),
           );
         }
-        return MaterialPageRoute(builder: (_) => const FoldersScreen());
+        return MaterialPageRoute(
+          builder: (_) => isMacOS
+              ? MacNotesScreen(initialCollection: initialCollection)
+              : const FoldersScreen(),
+        );
       },
-      onGenerateInitialRoutes: (_) => [
-        MaterialPageRoute(builder: (_) => const FoldersScreen()),
-        if (initialCollection != null)
-          MaterialPageRoute(
-            builder: (_) => NotesListScreen(collection: initialCollection!),
-          ),
-      ],
+      onGenerateInitialRoutes: (_) => isMacOS
+          ? [
+              MaterialPageRoute(
+                builder: (_) =>
+                    MacNotesScreen(initialCollection: initialCollection),
+              ),
+            ]
+          : [
+              MaterialPageRoute(builder: (_) => const FoldersScreen()),
+              if (initialCollection != null)
+                MaterialPageRoute(
+                  builder: (_) =>
+                      NotesListScreen(collection: initialCollection!),
+                ),
+            ],
     );
   }
 }
