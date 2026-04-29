@@ -75,7 +75,15 @@ class NoteService {
       print('[NoteService] createCollection ERROR: $e\n$st');
       rethrow;
     }
-    return NoteCollection.fromBlock(BlockModel(data: {'bid': bid, 'name': name}));
+    final block = BlockModel(data: data);
+    await _store.saveBlock(bid, block);
+    if (parentBid != null) {
+      final bids = await _store.getBids(parentBid);
+      if (!bids.contains(bid)) {
+        await _store.saveBids(parentBid, [bid, ...bids]);
+      }
+    }
+    return NoteCollection.fromBlock(block);
   }
 
   /// 加入集合：把 [currentCollectionBid] 加入到 [targetBid] block 的 link 字段里

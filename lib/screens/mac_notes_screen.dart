@@ -329,6 +329,11 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
     _selectFirstVisibleNote();
   }
 
+  Future<void> _deleteNote(NoteModel note) async {
+    await _selectNote(note);
+    await _deleteSelectedNote();
+  }
+
   Future<void> _copySelectedBid() async {
     final bid = _selectedNoteBid;
     if (bid == null) return;
@@ -337,6 +342,80 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('BID 已复制'), duration: Duration(seconds: 2)),
     );
+  }
+
+  Future<void> _copyNoteBid(NoteModel note) async {
+    await Clipboard.setData(ClipboardData(text: note.bid));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('BID 已复制'), duration: Duration(seconds: 2)),
+    );
+  }
+
+  Future<void> _moveNote(NoteModel note) async {
+    final current = _selectedCollection;
+    if (current == null) return;
+    final targets = context
+        .read<CollectionProvider>()
+        .collections
+        .where((c) => c.bid != current.bid)
+        .toList();
+    if (targets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('没有可移动到的集合')),
+      );
+      return;
+    }
+
+    final target = await showDialog<NoteCollection>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('移动到'),
+        children: [
+          for (final target in targets)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, target),
+              child: Row(
+                children: [
+                  const Icon(Icons.folder_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(target.title, overflow: TextOverflow.ellipsis),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (target == null || !mounted) return;
+
+    try {
+      await NoteService(context.read<ConnectionProvider>()).moveItemToCollection(
+        bid: note.bid,
+        fromCollectionBid: current.bid,
+        targetCollectionBid: target.bid,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已移动到「${target.title}」')),
+      );
+      await _noteProvider?.loadItems(current.bid);
+      if (_selectedNoteBid == note.bid) {
+        setState(() {
+          _selectedNoteBid = null;
+          _selectedNote = null;
+          _selectedTags = [];
+          _setEditorText('', '');
+        });
+        _selectFirstVisibleNote();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('移动失败：$e')),
+      );
+    }
   }
 
   Future<void> _showCreateCollectionDialog({String? parentBid}) async {
@@ -363,7 +442,6 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
         ],
       ),
     );
-    ctrl.dispose();
     if (name == null || name.isEmpty || !mounted) return;
 
     try {
@@ -371,9 +449,13 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
         context.read<ConnectionProvider>(),
       ).createCollection(name, parentBid: parentBid);
       if (!mounted) return;
-      await context.read<CollectionProvider>().addCollection(collection);
-      if (!mounted) return;
-      await _selectCollection(collection);
+      if (parentBid == null) {
+        await context.read<CollectionProvider>().addCollection(collection);
+        if (!mounted) return;
+        await _selectCollection(collection);
+      } else {
+        await _noteProvider?.loadItems(parentBid);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -382,7 +464,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
     }
   }
 
-  Future<void> _showJoinCollectionDialog() async {
+  Future<void> _showJoinCollectionDialog({String? currentCollectionBid}) async {
     final ctrl = TextEditingController();
     final bid = await showDialog<String>(
       context: context,
@@ -391,7 +473,9 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(labelText: '集合 BID'),
+          decoration: InputDecoration(
+            labelText: currentCollectionBid == null ? '集合 BID' : '目标集合 BID',
+          ),
           onSubmitted: (_) => Navigator.pop(dialogContext, ctrl.text.trim()),
         ),
         actions: [
@@ -406,22 +490,98 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
         ],
       ),
     );
-    ctrl.dispose();
     if (bid == null || bid.isEmpty || !mounted) return;
 
     try {
-      final collection = await NoteService(
-        context.read<ConnectionProvider>(),
-      ).fetchCollection(bid);
-      if (!mounted) return;
-      await context.read<CollectionProvider>().addCollection(collection);
-      if (!mounted) return;
-      await _selectCollection(collection);
+      final service = NoteService(context.read<ConnectionProvider>());
+      if (currentCollectionBid == null) {
+        final collection = await service.fetchCollection(bid);
+        if (!mounted) return;
+        await context.read<CollectionProvider>().addCollection(collection);
+        if (!mounted) return;
+        await _selectCollection(collection);
+      } else {
+        await service.joinCollection(
+          targetBid: bid,
+          currentCollectionBid: currentCollectionBid,
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已加入集合')),
+        );
+        await _noteProvider?.loadItems(currentCollectionBid);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('加入失败：$e')));
+    }
+  }
+
+  Future<void> _copyCollectionBid(NoteCollection collection) async {
+    await Clipboard.setData(ClipboardData(text: collection.bid));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('BID 已复制'), duration: Duration(seconds: 2)),
+    );
+  }
+
+  Future<void> _moveCollection(NoteCollection collection) async {
+    final targets = context
+        .read<CollectionProvider>()
+        .collections
+        .where((c) => c.bid != collection.bid)
+        .toList();
+    if (targets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('没有可移动到的集合')),
+      );
+      return;
+    }
+
+    final target = await showDialog<NoteCollection>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('移动到'),
+        children: [
+          for (final target in targets)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, target),
+              child: Row(
+                children: [
+                  const Icon(Icons.folder_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(target.title, overflow: TextOverflow.ellipsis),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (target == null || !mounted) return;
+
+    try {
+      await NoteService(context.read<ConnectionProvider>()).joinCollection(
+        targetBid: target.bid,
+        currentCollectionBid: collection.bid,
+      );
+      if (!mounted) return;
+      await context.read<CollectionProvider>().removeCollection(collection.bid);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已移动到「${target.title}」')),
+      );
+      if (_selectedCollection?.bid == collection.bid) {
+        await _selectCollection(target);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('移动失败：$e')),
+      );
     }
   }
 
@@ -512,12 +672,18 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
                   context,
                   MaterialPageRoute(builder: (_) => const SettingsScreen()),
                 ),
+                onCopyCollectionBid: _copyCollectionBid,
+                onCreateChildCollection: (collection) =>
+                    _showCreateCollectionDialog(parentBid: collection.bid),
+                onJoinCurrentCollection: (collection) =>
+                    _showJoinCollectionDialog(currentCollectionBid: collection.bid),
+                onMoveCollection: _moveCollection,
                 onRemoveCollection: _removeCollection,
               ),
             ),
             _MacDivider(isDark: isDark),
             SizedBox(
-              width: 300,
+              width: 280,
               child: _MacArticleList(
                 collection: _selectedCollection,
                 items: _visibleItems(),
@@ -527,9 +693,10 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
                 hasConnection: conn.hasActiveConnection,
                 hasCollections: collections.isNotEmpty,
                 onSelectNote: _selectNote,
-                onOpenCollection: _selectCollection,
                 onCreateNote: _createNote,
-                onCreateCollection: () => _showCreateCollectionDialog(),
+                onCopyNoteBid: _copyNoteBid,
+                onMoveNote: _moveNote,
+                onDeleteNote: _deleteNote,
                 onSetup: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const SetupScreen()),
@@ -555,7 +722,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
   }
 }
 
-class _MacSidebar extends StatelessWidget {
+class _MacSidebar extends StatefulWidget {
   const _MacSidebar({
     required this.collections,
     required this.selectedBid,
@@ -563,6 +730,10 @@ class _MacSidebar extends StatelessWidget {
     required this.onCreateCollection,
     required this.onJoinCollection,
     required this.onOpenSettings,
+    required this.onCopyCollectionBid,
+    required this.onCreateChildCollection,
+    required this.onJoinCurrentCollection,
+    required this.onMoveCollection,
     required this.onRemoveCollection,
   });
 
@@ -572,60 +743,77 @@ class _MacSidebar extends StatelessWidget {
   final VoidCallback onCreateCollection;
   final VoidCallback onJoinCollection;
   final VoidCallback onOpenSettings;
+  final ValueChanged<NoteCollection> onCopyCollectionBid;
+  final ValueChanged<NoteCollection> onCreateChildCollection;
+  final ValueChanged<NoteCollection> onJoinCurrentCollection;
+  final ValueChanged<NoteCollection> onMoveCollection;
   final ValueChanged<NoteCollection> onRemoveCollection;
+
+  @override
+  State<_MacSidebar> createState() => _MacSidebarState();
+}
+
+class _MacSidebarState extends State<_MacSidebar> {
+  final Map<String, bool> _expanded = {};
+
+  Future<List<NoteCollection>> _loadChildCollections(String bid) async {
+    final bids = await NoteLocalStore.instance.getBids(bid);
+    if (bids.isEmpty) return const [];
+    final blocks = await NoteLocalStore.instance.getBlocks(bids);
+    final children = <NoteCollection>[];
+    for (final childBid in bids) {
+      final block = blocks[childBid];
+      if (block == null) continue;
+      final item = NoteListItem.fromBlock(block);
+      if (item is NoteListItemCollection) {
+        children.add(item.collection);
+      }
+    }
+    return children;
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = cs.brightness == Brightness.dark;
-    final defaults = collections.where((c) => c.isDefault).toList();
-    final regular = collections.where((c) => !c.isDefault).toList();
+    final defaults = widget.collections.where((c) => c.isDefault).toList();
+    final regular = widget.collections.where((c) => !c.isDefault).toList();
 
     return Container(
       color: _MacPalette.sidebar(isDark),
       child: Column(
         children: [
           _SidebarToolbar(
-            onOpenSettings: onOpenSettings,
+            onOpenSettings: widget.onOpenSettings,
           ),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
               children: [
                 _SidebarSectionLabel(
-                  label: '集合',
-                  actions: [
-                    _MacIconButton(
-                      icon: Icons.create_new_folder_outlined,
-                      tooltip: '新建集合',
-                      onPressed: onCreateCollection,
-                    ),
-                    _MacIconButton(
-                      icon: Icons.folder_shared_outlined,
-                      tooltip: '加入集合',
-                      onPressed: onJoinCollection,
-                    ),
-                  ],
-                ),
-                if (defaults.isNotEmpty)
-                  for (final collection in defaults)
-                    _SidebarCollectionTile(
-                      collection: collection,
-                      selected: collection.bid == selectedBid,
-                      onTap: () => onSelect(collection),
-                      onRemove: () => onRemoveCollection(collection),
-                    ),
-                if (regular.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  for (final collection in regular)
-                    _SidebarCollectionTile(
-                      collection: collection,
-                      selected: collection.bid == selectedBid,
-                      onTap: () => onSelect(collection),
-                      onRemove: () => onRemoveCollection(collection),
-                    ),
-                ],
-                if (collections.isEmpty)
+	                  label: '集合',
+	                  actions: [
+	                    _MacIconButton(
+	                      icon: Icons.create_new_folder_outlined,
+	                      tooltip: '新建集合',
+	                      onPressed: widget.onCreateCollection,
+	                    ),
+	                    _MacIconButton(
+	                      icon: Icons.folder_shared_outlined,
+	                      tooltip: '加入集合',
+	                      onPressed: widget.onJoinCollection,
+	                    ),
+	                  ],
+	                ),
+	                if (defaults.isNotEmpty)
+	                  for (final collection in defaults)
+	                    _buildCollectionNode(collection, 0, null),
+	                if (regular.isNotEmpty) ...[
+	                  const SizedBox(height: 6),
+	                  for (final collection in regular)
+	                    _buildCollectionNode(collection, 0, null),
+	                ],
+	                if (widget.collections.isEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(10, 18, 10, 0),
                     child: Text(
@@ -642,6 +830,81 @@ class _MacSidebar extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildCollectionNode(
+    NoteCollection collection,
+    int depth,
+    String? parentBid,
+  ) {
+    return FutureBuilder<List<NoteCollection>>(
+      future: _loadChildCollections(collection.bid),
+      builder: (context, snapshot) {
+        final children = snapshot.data ?? const <NoteCollection>[];
+        final hasChildren = children.isNotEmpty;
+        final expanded = _expanded[collection.bid] == true;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _SidebarCollectionTile(
+              collection: collection,
+              selected: collection.bid == widget.selectedBid,
+              depth: depth,
+              hasChildren: hasChildren,
+              isExpanded: expanded,
+              isTopLevel: depth == 0,
+              onToggle: hasChildren
+                  ? () => setState(() {
+                        _expanded[collection.bid] = !expanded;
+                      })
+                  : null,
+              onTap: () => widget.onSelect(collection),
+              onCopyBid: () => widget.onCopyCollectionBid(collection),
+              onCreateChild: () => widget.onCreateChildCollection(collection),
+              onJoinCurrent: () => widget.onJoinCurrentCollection(collection),
+              onMove: () => widget.onMoveCollection(collection),
+              onRemove: () => depth == 0
+                  ? widget.onRemoveCollection(collection)
+                  : _deleteChildCollection(collection, parentBid!),
+            ),
+            if (expanded)
+              for (final child in children)
+                _buildCollectionNode(child, depth + 1, collection.bid),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteChildCollection(
+    NoteCollection collection,
+    String parentBid,
+  ) async {
+    try {
+      await NoteService(context.read<ConnectionProvider>()).deleteNote(collection.bid);
+      final bids = await NoteLocalStore.instance.getBids(parentBid);
+      await NoteLocalStore.instance.saveBids(
+        parentBid,
+        bids.where((bid) => bid != collection.bid).toList(),
+      );
+      if (!mounted) return;
+      if (widget.selectedBid == collection.bid) {
+        final parentBlock = await NoteLocalStore.instance.getBlock(parentBid);
+        if (parentBlock != null && mounted) {
+          widget.onSelect(NoteCollection.fromBlock(parentBlock));
+        }
+      }
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('集合已删除')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('删除失败：$e')),
+      );
+    }
   }
 }
 
@@ -706,13 +969,31 @@ class _SidebarCollectionTile extends StatelessWidget {
   const _SidebarCollectionTile({
     required this.collection,
     required this.selected,
+    required this.depth,
+    required this.hasChildren,
+    required this.isExpanded,
+    required this.isTopLevel,
+    required this.onToggle,
     required this.onTap,
+    required this.onCopyBid,
+    required this.onCreateChild,
+    required this.onJoinCurrent,
+    required this.onMove,
     required this.onRemove,
   });
 
   final NoteCollection collection;
   final bool selected;
+  final int depth;
+  final bool hasChildren;
+  final bool isExpanded;
+  final bool isTopLevel;
+  final VoidCallback? onToggle;
   final VoidCallback onTap;
+  final VoidCallback onCopyBid;
+  final VoidCallback onCreateChild;
+  final VoidCallback onJoinCurrent;
+  final VoidCallback onMove;
   final VoidCallback onRemove;
 
   @override
@@ -727,55 +1008,115 @@ class _SidebarCollectionTile extends StatelessWidget {
       child: Material(
         color: selected ? _MacPalette.selection(isDark) : Colors.transparent,
         borderRadius: BorderRadius.circular(9),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(9),
-          onTap: onTap,
-          onLongPress: onRemove,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Row(
-              children: [
-                Icon(Icons.folder_outlined, size: 17, color: textColor),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    collection.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                      color: textColor,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onSecondaryTapDown: (details) => _showContextMenu(
+            context,
+            details.globalPosition,
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(9),
+            onTap: onTap,
+            onLongPress: onRemove,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(4.0 + depth * 14.0, 6, 8, 6),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 12,
+                    child: hasChildren
+                        ? InkWell(
+                            borderRadius: BorderRadius.circular(4),
+                            onTap: onToggle,
+                            child: AnimatedRotation(
+                              turns: isExpanded ? 0.25 : 0,
+                              duration: const Duration(milliseconds: 140),
+                              child: Icon(
+                                Icons.chevron_right_rounded,
+                                size: 13,
+                                color: _MacPalette.secondaryText(isDark),
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                  const SizedBox(width: 1),
+                  Icon(Icons.folder_outlined, size: 17, color: textColor),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      collection.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                        color: textColor,
+                      ),
                     ),
                   ),
-                ),
-                FutureBuilder<int>(
-                  future: NoteLocalStore.instance
-                      .getBids(collection.bid)
-                      .then((bids) => bids.length),
-                  builder: (context, snap) {
-                    final count = snap.data;
-                    if (count == null || count == 0) {
-                      return const SizedBox(width: 4);
-                    }
-                    return Text(
-                      '$count',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: selected
-                            ? textColor
-                            : _MacPalette.tertiaryText(isDark),
-                      ),
-                    );
-                  },
-                ),
-              ],
+                  FutureBuilder<int>(
+                    future: NoteLocalStore.instance
+                        .getBids(collection.bid)
+                        .then((bids) => bids.length),
+                    builder: (context, snap) {
+                      final count = snap.data;
+                      if (count == null || count == 0) {
+                        return const SizedBox(width: 4);
+                      }
+                      return Text(
+                        '$count',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: selected
+                              ? textColor
+                              : _MacPalette.tertiaryText(isDark),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _showContextMenu(BuildContext context, Offset position) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final value = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        overlay.size.width - position.dx,
+        overlay.size.height - position.dy,
+      ),
+      items: [
+        const PopupMenuItem(value: 'copy', child: Text('复制 BID')),
+        const PopupMenuItem(value: 'create_child', child: Text('新建集合')),
+        const PopupMenuItem(value: 'join_current', child: Text('加入集合')),
+        const PopupMenuItem(value: 'move', child: Text('移动')),
+        const PopupMenuDivider(),
+        PopupMenuItem(value: 'remove', child: Text(isTopLevel ? '移除' : '删除')),
+      ],
+    );
+
+    switch (value) {
+      case 'copy':
+        onCopyBid();
+      case 'create_child':
+        onCreateChild();
+      case 'join_current':
+        onJoinCurrent();
+      case 'move':
+        onMove();
+      case 'remove':
+        onRemove();
+    }
   }
 }
 
@@ -789,9 +1130,10 @@ class _MacArticleList extends StatelessWidget {
     required this.hasConnection,
     required this.hasCollections,
     required this.onSelectNote,
-    required this.onOpenCollection,
     required this.onCreateNote,
-    required this.onCreateCollection,
+    required this.onCopyNoteBid,
+    required this.onMoveNote,
+    required this.onDeleteNote,
     required this.onSetup,
   });
 
@@ -803,15 +1145,15 @@ class _MacArticleList extends StatelessWidget {
   final bool hasConnection;
   final bool hasCollections;
   final ValueChanged<NoteModel> onSelectNote;
-  final ValueChanged<NoteCollection> onOpenCollection;
   final VoidCallback onCreateNote;
-  final VoidCallback onCreateCollection;
+  final ValueChanged<NoteModel> onCopyNoteBid;
+  final ValueChanged<NoteModel> onMoveNote;
+  final ValueChanged<NoteModel> onDeleteNote;
   final VoidCallback onSetup;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).colorScheme.brightness == Brightness.dark;
-    final collections = items.whereType<NoteListItemCollection>().toList();
     final notes = items.whereType<NoteListItemNote>().toList();
 
     return Container(
@@ -840,16 +1182,14 @@ class _MacArticleList extends StatelessWidget {
                   return _PaneState(
                     icon: Icons.folder_open_outlined,
                     title: '还没有集合',
-                    actionLabel: '新建集合',
-                    onAction: onCreateCollection,
                   );
                 }
-                if (isLoading && items.isEmpty) {
+                if (isLoading && notes.isEmpty) {
                   return const Center(
                     child: CircularProgressIndicator(strokeWidth: 2),
                   );
                 }
-                if (items.isEmpty) {
+                if (notes.isEmpty) {
                   return _PaneState(
                     icon: Icons.note_add_outlined,
                     title: '没有备忘录',
@@ -861,15 +1201,6 @@ class _MacArticleList extends StatelessWidget {
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(14, 4, 14, 20),
                   children: [
-                    if (collections.isNotEmpty) ...[
-                      _ListSectionLabel(label: '集合'),
-                      for (final item in collections)
-                        _CollectionListTile(
-                          collection: item.collection,
-                          onTap: () => onOpenCollection(item.collection),
-                        ),
-                      const SizedBox(height: 12),
-                    ],
                     for (var i = 0; i < notes.length; i++)
                       _NoteListTile(
                         note: notes[i].note,
@@ -879,6 +1210,9 @@ class _MacArticleList extends StatelessWidget {
                                 notes[i + 1].note.bid == selectedBid),
                         collectionTitle: collection?.title ?? '',
                         onTap: () => onSelectNote(notes[i].note),
+                        onCopyBid: () => onCopyNoteBid(notes[i].note),
+                        onMove: () => onMoveNote(notes[i].note),
+                        onDelete: () => onDeleteNote(notes[i].note),
                       ),
                   ],
                 );
@@ -954,10 +1288,20 @@ class _ArticleListHeader extends StatelessWidget {
               ],
             ),
           ),
-          _MacIconButton(
-            icon: Icons.edit_square,
-            tooltip: '新建备忘录',
-            onPressed: collection == null ? null : onCreateNote,
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _MacIconButton(
+                  icon: Icons.edit_square,
+                  tooltip: '新建备忘录',
+                  size: 18,
+                  buttonSize: 32,
+                  onPressed: collection == null ? null : onCreateNote,
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1044,6 +1388,9 @@ class _NoteListTile extends StatelessWidget {
     required this.hideBottomDivider,
     required this.collectionTitle,
     required this.onTap,
+    required this.onCopyBid,
+    required this.onMove,
+    required this.onDelete,
   });
 
   final NoteModel note;
@@ -1051,6 +1398,9 @@ class _NoteListTile extends StatelessWidget {
   final bool hideBottomDivider;
   final String collectionTitle;
   final VoidCallback onTap;
+  final VoidCallback onCopyBid;
+  final VoidCallback onMove;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -1068,15 +1418,21 @@ class _NoteListTile extends StatelessWidget {
     return Material(
       color: selected ? _MacPalette.noteSelection(isDark) : Colors.transparent,
       borderRadius: BorderRadius.circular(9),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(9),
-        hoverColor: selected ? Colors.transparent : _MacPalette.noteHover(isDark),
-        highlightColor: Colors.transparent,
-        splashColor: Colors.transparent,
-        focusColor: Colors.transparent,
-        overlayColor: WidgetStateProperty.all(Colors.transparent),
-        onTap: onTap,
-        child: Container(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onSecondaryTapDown: (details) => _showContextMenu(
+          context,
+          details.globalPosition,
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(9),
+          hoverColor: selected ? Colors.transparent : _MacPalette.noteHover(isDark),
+          highlightColor: Colors.transparent,
+          splashColor: Colors.transparent,
+          focusColor: Colors.transparent,
+          overlayColor: WidgetStateProperty.all(Colors.transparent),
+          onTap: onTap,
+          child: Container(
           constraints: const BoxConstraints(minHeight: 66),
           padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
           decoration: hideBottomDivider
@@ -1148,9 +1504,38 @@ class _NoteListTile extends StatelessWidget {
               ),
             ],
           ),
+          ),
         ),
       ),
     );
+  }
+
+  Future<void> _showContextMenu(BuildContext context, Offset position) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final value = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        overlay.size.width - position.dx,
+        overlay.size.height - position.dy,
+      ),
+      items: const [
+        PopupMenuItem(value: 'copy', child: Text('复制 BID')),
+        PopupMenuItem(value: 'move', child: Text('移动')),
+        PopupMenuDivider(),
+        PopupMenuItem(value: 'delete', child: Text('删除')),
+      ],
+    );
+
+    switch (value) {
+      case 'copy':
+        onCopyBid();
+      case 'move':
+        onMove();
+      case 'delete':
+        onDelete();
+    }
   }
 }
 
@@ -1386,11 +1771,15 @@ class _MacIconButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
+    this.size = 20,
+    this.buttonSize,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback? onPressed;
+  final double size;
+  final double? buttonSize;
 
   @override
   Widget build(BuildContext context) {
@@ -1399,7 +1788,11 @@ class _MacIconButton extends StatelessWidget {
       message: tooltip,
       child: IconButton(
         visualDensity: VisualDensity.compact,
-        iconSize: 20,
+        constraints: buttonSize == null
+            ? null
+            : BoxConstraints.tightFor(width: buttonSize, height: buttonSize),
+        padding: EdgeInsets.zero,
+        iconSize: size,
         splashRadius: 18,
         color: _MacPalette.icon(isDark),
         disabledColor: _MacPalette.tertiaryText(isDark).withValues(alpha: 0.45),

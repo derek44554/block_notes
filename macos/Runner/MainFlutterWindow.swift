@@ -2,8 +2,8 @@ import Cocoa
 import FlutterMacOS
 
 class MainFlutterWindow: NSWindow {
-  private let trafficLightXOffset: CGFloat = 18
-  private let trafficLightYOffset: CGFloat = -10
+  private let trafficLightXOffset: CGFloat = 10
+  private let trafficLightYOffset: CGFloat = -14
   private var trafficLightBaseFrames: [Int: NSRect] = [:]
 
   override func awakeFromNib() {
