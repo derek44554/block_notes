@@ -47,6 +47,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
   int _collectionLoadToken = 0;
   int _noteLoadToken = 0;
   int _editorRevision = 0;
+  int _swipeDismissRevision = 0;
   String _lastRemoteTitle = '';
   String _lastRemoteContent = '';
 
@@ -115,6 +116,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
   }
 
   Future<void> _selectCollection(NoteCollection collection) async {
+    _dismissOpenSwipeActions();
     if (_selectedCollection?.bid == collection.bid) return;
     await _syncEditorRemote();
     if (!mounted) return;
@@ -174,6 +176,9 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
   }
 
   Future<void> _selectNote(NoteModel note, {bool focusTitle = false}) async {
+    if (_selectedNoteBid != note.bid) {
+      _dismissOpenSwipeActions();
+    }
     if (_selectedNoteBid == note.bid && !_loadingNote) return;
     await _syncEditorRemote();
     final token = ++_noteLoadToken;
@@ -219,6 +224,11 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
       offset: _contentCtrl.text.length,
     );
     _applyingEditorText = false;
+  }
+
+  void _dismissOpenSwipeActions() {
+    if (!mounted) return;
+    setState(() => _swipeDismissRevision++);
   }
 
   void _onEditorChanged() {
@@ -711,6 +721,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
                 isLoading: _noteProvider?.isLoading ?? false,
                 isSyncing: _noteProvider?.syncing ?? false,
                 selectedBid: _selectedNoteBid,
+                swipeDismissRevision: _swipeDismissRevision,
                 hasConnection: conn.hasActiveConnection,
                 hasCollections: collections.isNotEmpty,
                 onSelectNote: _selectNote,
@@ -1415,6 +1426,7 @@ class _MacArticleList extends StatelessWidget {
     required this.isLoading,
     required this.isSyncing,
     required this.selectedBid,
+    required this.swipeDismissRevision,
     required this.hasConnection,
     required this.hasCollections,
     required this.onSelectNote,
@@ -1431,6 +1443,7 @@ class _MacArticleList extends StatelessWidget {
   final bool isLoading;
   final bool isSyncing;
   final String? selectedBid;
+  final int swipeDismissRevision;
   final bool hasConnection;
   final bool hasCollections;
   final ValueChanged<NoteModel> onSelectNote;
@@ -1496,6 +1509,7 @@ class _MacArticleList extends StatelessWidget {
                         key: ValueKey(notes[i].note.bid),
                         note: notes[i].note,
                         selected: notes[i].note.bid == selectedBid,
+                        swipeDismissRevision: swipeDismissRevision,
                         hideBottomDivider:
                             notes[i].note.bid == selectedBid ||
                             (i + 1 < notes.length &&
@@ -1606,6 +1620,7 @@ class _NoteListTile extends StatefulWidget {
     super.key,
     required this.note,
     required this.selected,
+    required this.swipeDismissRevision,
     required this.hideBottomDivider,
     required this.collectionTitle,
     required this.onTap,
@@ -1617,6 +1632,7 @@ class _NoteListTile extends StatefulWidget {
 
   final NoteModel note;
   final bool selected;
+  final int swipeDismissRevision;
   final bool hideBottomDivider;
   final String collectionTitle;
   final VoidCallback onTap;
@@ -1642,11 +1658,9 @@ class _NoteListTileState extends State<_NoteListTile> {
   @override
   void didUpdateWidget(covariant _NoteListTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.note.bid != widget.note.bid) {
-      _offset = 0;
-      _trackingPointer = false;
-      _activeSwipeSide = null;
-      _scrollSettleTimer?.cancel();
+    if (oldWidget.note.bid != widget.note.bid ||
+        oldWidget.swipeDismissRevision != widget.swipeDismissRevision) {
+      _resetSwipeState();
     }
   }
 
@@ -1657,6 +1671,13 @@ class _NoteListTileState extends State<_NoteListTile> {
   }
 
   bool get _isOpen => _offset.abs() > 0.5;
+
+  void _resetSwipeState() {
+    _offset = 0;
+    _trackingPointer = false;
+    _activeSwipeSide = null;
+    _scrollSettleTimer?.cancel();
+  }
 
   double _clampOffset(double value) =>
       value.clamp(-_actionWidth, _actionWidth).toDouble();
@@ -1944,40 +1965,17 @@ class _NotePinSwipeAction extends StatelessWidget {
     final isDark = Theme.of(context).colorScheme.brightness == Brightness.dark;
     final background = isPinned
         ? _MacPalette.selection(isDark)
-        : _MacPalette.noteSelection(isDark);
+        : const Color(0xFFFF9500);
     final foreground = isPinned
         ? _MacPalette.primaryText(isDark)
-        : _MacPalette.selectedText(isDark);
+        : Colors.white;
 
-    return SizedBox(
-      width: _NoteListTileState._actionWidth,
-      child: Material(
-        color: background,
-        child: InkWell(
-          onTap: onPressed,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-                size: 18,
-                color: foreground,
-              ),
-              const SizedBox(height: 3),
-              Text(
-                isPinned ? '取消置顶' : '置顶',
-                maxLines: 1,
-                overflow: TextOverflow.clip,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: foreground,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return _NoteSwipeIconAction(
+      icon: isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+      tooltip: isPinned ? '取消置顶' : '置顶',
+      background: background,
+      foreground: foreground,
+      onPressed: onPressed,
     );
   }
 }
@@ -1991,28 +1989,49 @@ class _NoteDeleteSwipeAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
+    return _NoteSwipeIconAction(
+      icon: Icons.delete_outline_rounded,
+      tooltip: '删除',
+      background: cs.error,
+      foreground: cs.onError,
+      onPressed: onPressed,
+    );
+  }
+}
+
+class _NoteSwipeIconAction extends StatelessWidget {
+  const _NoteSwipeIconAction({
+    required this.icon,
+    required this.tooltip,
+    required this.background,
+    required this.foreground,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final Color background;
+  final Color foreground;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
     return SizedBox(
       width: _NoteListTileState._actionWidth,
-      child: Material(
-        color: cs.error,
-        child: InkWell(
-          onTap: onPressed,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.delete_outline_rounded, size: 18, color: cs.onError),
-              const SizedBox(height: 3),
-              Text(
-                '删除',
-                maxLines: 1,
-                overflow: TextOverflow.clip,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: cs.onError,
-                ),
+      child: Center(
+        child: Tooltip(
+          message: tooltip,
+          child: Material(
+            color: background,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: onPressed,
+              child: SizedBox.square(
+                dimension: 54,
+                child: Icon(icon, size: 25, color: foreground),
               ),
-            ],
+            ),
           ),
         ),
       ),
