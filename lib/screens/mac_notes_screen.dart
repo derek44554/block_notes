@@ -1636,6 +1636,7 @@ class _NoteListTileState extends State<_NoteListTile> {
 
   double _offset = 0;
   bool _trackingPointer = false;
+  int? _activeSwipeSide;
   Timer? _scrollSettleTimer;
 
   @override
@@ -1644,6 +1645,7 @@ class _NoteListTileState extends State<_NoteListTile> {
     if (oldWidget.note.bid != widget.note.bid) {
       _offset = 0;
       _trackingPointer = false;
+      _activeSwipeSide = null;
       _scrollSettleTimer?.cancel();
     }
   }
@@ -1661,25 +1663,47 @@ class _NoteListTileState extends State<_NoteListTile> {
 
   void _startTracking() {
     _scrollSettleTimer?.cancel();
+    if (!_isOpen) {
+      _activeSwipeSide = null;
+    }
     if (!_trackingPointer) {
       setState(() => _trackingPointer = true);
     }
   }
 
   void _updateOffset(double delta) {
-    setState(() => _offset = _clampOffset(_offset + delta));
+    final proposed = _offset + delta;
+    final side = _activeSwipeSide ?? (proposed == 0 ? null : proposed.sign);
+    if (side == null) {
+      setState(() => _offset = 0);
+      return;
+    }
+
+    final next = side > 0
+        ? proposed.clamp(0, _actionWidth).toDouble()
+        : proposed.clamp(-_actionWidth, 0).toDouble();
+    setState(() {
+      _activeSwipeSide = side.toInt();
+      _offset = _clampOffset(next);
+    });
   }
 
   void _settle({double velocity = 0}) {
-    final target = switch (velocity) {
-      > 500 => _actionWidth,
-      < -500 => -_actionWidth,
-      _ when _offset > _openThreshold => _actionWidth,
-      _ when _offset < -_openThreshold => -_actionWidth,
-      _ => 0.0,
-    };
+    final side = _activeSwipeSide ?? (_offset == 0 ? null : _offset.sign);
+    final opensWithVelocity =
+        side != null &&
+        ((side > 0 && velocity > 500) || (side < 0 && velocity < -500));
+    final closesWithVelocity =
+        side != null &&
+        ((side > 0 && velocity < -500) || (side < 0 && velocity > 500));
+    final shouldOpen =
+        side != null &&
+        !closesWithVelocity &&
+        (opensWithVelocity || _offset.abs() > _openThreshold);
+    final target = shouldOpen ? (side * _actionWidth).toDouble() : 0.0;
     setState(() {
       _trackingPointer = false;
+      _activeSwipeSide = target == 0 ? null : side?.toInt();
       _offset = target;
     });
   }
@@ -1688,6 +1712,7 @@ class _NoteListTileState extends State<_NoteListTile> {
     if (!_isOpen) return;
     setState(() {
       _trackingPointer = false;
+      _activeSwipeSide = null;
       _offset = 0;
     });
   }
@@ -1708,6 +1733,11 @@ class _NoteListTileState extends State<_NoteListTile> {
     widget.onTogglePinned();
   }
 
+  void _runDeleteAction() {
+    _close();
+    widget.onDelete();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).colorScheme.brightness == Brightness.dark;
@@ -1724,7 +1754,7 @@ class _NoteListTileState extends State<_NoteListTile> {
     final tile = Material(
       color: widget.selected
           ? _MacPalette.noteSelection(isDark)
-          : Colors.transparent,
+          : _MacPalette.listPane(isDark),
       borderRadius: BorderRadius.circular(9),
       child: InkWell(
         borderRadius: BorderRadius.circular(9),
@@ -1837,21 +1867,23 @@ class _NoteListTileState extends State<_NoteListTile> {
           borderRadius: BorderRadius.circular(9),
           child: Stack(
             children: [
-              Positioned.fill(
-                child: Row(
-                  children: [
-                    _NotePinSwipeAction(
+              if (_offset > 0)
+                Positioned.fill(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _NotePinSwipeAction(
                       isPinned: widget.note.isPinned,
                       onPressed: _runPinAction,
                     ),
-                    const Spacer(),
-                    _NotePinSwipeAction(
-                      isPinned: widget.note.isPinned,
-                      onPressed: _runPinAction,
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+              if (_offset < 0)
+                Positioned.fill(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: _NoteDeleteSwipeAction(onPressed: _runDeleteAction),
+                  ),
+                ),
               AnimatedContainer(
                 duration: _trackingPointer ? Duration.zero : _slideDuration,
                 curve: Curves.easeOutCubic,
@@ -1940,6 +1972,44 @@ class _NotePinSwipeAction extends StatelessWidget {
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: foreground,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoteDeleteSwipeAction extends StatelessWidget {
+  const _NoteDeleteSwipeAction({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return SizedBox(
+      width: _NoteListTileState._actionWidth,
+      child: Material(
+        color: cs.error,
+        child: InkWell(
+          onTap: onPressed,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.delete_outline_rounded, size: 18, color: cs.onError),
+              const SizedBox(height: 3),
+              Text(
+                '删除',
+                maxLines: 1,
+                overflow: TextOverflow.clip,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: cs.onError,
                 ),
               ),
             ],
