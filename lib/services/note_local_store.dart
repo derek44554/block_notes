@@ -13,6 +13,7 @@ class NoteLocalStore {
   static const _bidsPrefix = 'note_bids_';         // + collectionBid
   static const _tagBidsPrefix = 'note_tag_bids_'; // + collectionBid + tag
   static const _blockPrefix = 'note_block_';       // + bid
+  static const _collectionOrderPrefix = 'note_collection_order_';
   static const _pendingWritesKey = 'note_pending_writes';
   static const _optimisticBidsPrefix = 'note_optimistic_bids_';
   static const _optimisticBidMaxAge = Duration(minutes: 30);
@@ -21,6 +22,7 @@ class NoteLocalStore {
   final Map<String, List<String>> _bidsCache = {};
   final Map<String, List<String>> _tagBidsCache = {};
   final Map<String, BlockModel> _blockCache = {};
+  final Map<String, List<String>> _collectionOrderCache = {};
   final Map<String, Map<String, int>> _optimisticBidsCache = {};
   List<String>? _pendingWriteCache;
 
@@ -234,6 +236,57 @@ class NoteLocalStore {
       writes.add(prefs.setStringList(key, updated));
     }
     await Future.wait(writes);
+  }
+
+  // ── 本地集合排序 ───────────────────────────────────────────
+
+  Future<List<String>> getCollectionOrder(String parentBid) async {
+    final cached = _collectionOrderCache[parentBid];
+    if (cached != null) return List<String>.from(cached);
+    final prefs = await _prefs;
+    final order =
+        prefs.getStringList('$_collectionOrderPrefix$parentBid') ?? [];
+    _collectionOrderCache[parentBid] = _dedupe(order);
+    return List<String>.from(_collectionOrderCache[parentBid]!);
+  }
+
+  Future<void> saveCollectionOrder(
+    String parentBid,
+    List<String> collectionBids,
+  ) async {
+    final normalized = _dedupe(collectionBids);
+    _collectionOrderCache[parentBid] = normalized;
+    final prefs = await _prefs;
+    await prefs.setStringList('$_collectionOrderPrefix$parentBid', normalized);
+  }
+
+  Future<List<String>> orderCollectionBids(
+    String parentBid,
+    List<String> collectionBids,
+  ) async {
+    final localOrder = await getCollectionOrder(parentBid);
+    if (localOrder.isEmpty || collectionBids.length < 2) {
+      return List<String>.from(collectionBids);
+    }
+
+    final orderIndexes = <String, int>{
+      for (var i = 0; i < localOrder.length; i++) localOrder[i]: i,
+    };
+    final fallbackIndexes = <String, int>{
+      for (var i = 0; i < collectionBids.length; i++) collectionBids[i]: i,
+    };
+    final ordered = List<String>.from(collectionBids);
+    ordered.sort((a, b) {
+      final aOrder = orderIndexes[a];
+      final bOrder = orderIndexes[b];
+      if (aOrder != null && bOrder != null) {
+        return aOrder.compareTo(bOrder);
+      }
+      if (aOrder != null) return -1;
+      if (bOrder != null) return 1;
+      return fallbackIndexes[a]!.compareTo(fallbackIndexes[b]!);
+    });
+    return ordered;
   }
 
   // ── 待同步写入 ─────────────────────────────────────────────

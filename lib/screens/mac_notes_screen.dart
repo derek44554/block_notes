@@ -814,6 +814,9 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
                     _showJoinCollectionDialog(
                       currentCollectionBid: collection.bid,
                     ),
+                onReorderCollection: (oldIndex, newIndex) => context
+                    .read<CollectionProvider>()
+                    .reorderCollection(oldIndex, newIndex),
                 onMoveCollection: (collection, parentBid) =>
                     _moveCollection(collection, parentBid: parentBid),
                 onRemoveCollection: _removeCollection,
@@ -1120,6 +1123,7 @@ class _MacSidebar extends StatefulWidget {
     required this.onCopyCollectionBid,
     required this.onCreateChildCollection,
     required this.onJoinCurrentCollection,
+    required this.onReorderCollection,
     required this.onMoveCollection,
     required this.onRemoveCollection,
   });
@@ -1133,6 +1137,7 @@ class _MacSidebar extends StatefulWidget {
   final ValueChanged<NoteCollection> onCopyCollectionBid;
   final ValueChanged<NoteCollection> onCreateChildCollection;
   final ValueChanged<NoteCollection> onJoinCurrentCollection;
+  final Future<void> Function(int oldIndex, int newIndex) onReorderCollection;
   final void Function(NoteCollection collection, String? parentBid)
   onMoveCollection;
   final ValueChanged<NoteCollection> onRemoveCollection;
@@ -1157,15 +1162,23 @@ class _MacSidebarState extends State<_MacSidebar> {
         children.add(item.collection);
       }
     }
-    return children;
+    final orderedBids = await NoteLocalStore.instance.orderCollectionBids(
+      bid,
+      children.map((collection) => collection.bid).toList(),
+    );
+    final childrenByBid = {
+      for (final collection in children) collection.bid: collection,
+    };
+    return [
+      for (final childBid in orderedBids)
+        if (childrenByBid[childBid] != null) childrenByBid[childBid]!,
+    ];
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = cs.brightness == Brightness.dark;
-    final defaults = widget.collections.where((c) => c.isDefault).toList();
-    final regular = widget.collections.where((c) => !c.isDefault).toList();
 
     return Container(
       color: _MacPalette.sidebar(isDark),
@@ -1173,33 +1186,51 @@ class _MacSidebarState extends State<_MacSidebar> {
         children: [
           _SidebarToolbar(onOpenSettings: widget.onOpenSettings),
           Expanded(
-            child: ListView(
+            child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
-              children: [
-                _SidebarSectionLabel(
-                  label: '集合',
-                  onContextMenu: _showRootContextMenu,
-                ),
-                if (defaults.isNotEmpty)
-                  for (final collection in defaults)
-                    _buildCollectionNode(collection, 0, null),
-                if (regular.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  for (final collection in regular)
-                    _buildCollectionNode(collection, 0, null),
-                ],
-                if (widget.collections.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 18, 10, 0),
-                    child: Text(
-                      '还没有集合',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: _MacPalette.secondaryText(isDark),
-                      ),
-                    ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _SidebarSectionLabel(
+                    label: '集合',
+                    onContextMenu: _showRootContextMenu,
                   ),
-              ],
+                  Expanded(
+                    child: widget.collections.isEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 18, 10, 0),
+                            child: Text(
+                              '还没有集合',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: _MacPalette.secondaryText(isDark),
+                              ),
+                            ),
+                          )
+                        : ReorderableListView.builder(
+                            buildDefaultDragHandles: false,
+                            padding: EdgeInsets.zero,
+                            primary: false,
+                            itemCount: widget.collections.length,
+                            onReorder: _onReorderRootCollections,
+                            itemBuilder: (context, index) {
+                              final collection = widget.collections[index];
+                              return KeyedSubtree(
+                                key: ValueKey(
+                                  'root_collection_${collection.bid}',
+                                ),
+                                child: _buildCollectionNode(
+                                  collection,
+                                  0,
+                                  null,
+                                  reorderIndex: index,
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -1210,8 +1241,9 @@ class _MacSidebarState extends State<_MacSidebar> {
   Widget _buildCollectionNode(
     NoteCollection collection,
     int depth,
-    String? parentBid,
-  ) {
+    String? parentBid, {
+    int? reorderIndex,
+  }) {
     return FutureBuilder<List<NoteCollection>>(
       future: _loadChildCollections(collection.bid),
       builder: (context, snapshot) {
@@ -1229,6 +1261,7 @@ class _MacSidebarState extends State<_MacSidebar> {
               hasChildren: hasChildren,
               isExpanded: expanded,
               isTopLevel: depth == 0,
+              reorderIndex: reorderIndex,
               onToggle: hasChildren
                   ? () => setState(() {
                       _expanded[collection.bid] = !expanded;
@@ -1244,12 +1277,111 @@ class _MacSidebarState extends State<_MacSidebar> {
                   : _deleteChildCollection(collection, parentBid!),
             ),
             if (expanded)
-              for (final child in children)
-                _buildCollectionNode(child, depth + 1, collection.bid),
+              ReorderableListView.builder(
+                shrinkWrap: true,
+                primary: false,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                padding: EdgeInsets.zero,
+                itemCount: children.length,
+                onReorder: (oldIndex, newIndex) =>
+                    _onReorderChildCollections(
+                      collection.bid,
+                      children,
+                      oldIndex,
+                      newIndex,
+                    ),
+                itemBuilder: (context, index) {
+                  final child = children[index];
+                  return KeyedSubtree(
+                    key: ValueKey(
+                      'child_collection_${collection.bid}_${child.bid}',
+                    ),
+                    child: _buildCollectionNode(
+                      child,
+                      depth + 1,
+                      collection.bid,
+                      reorderIndex: index,
+                    ),
+                  );
+                },
+              ),
           ],
         );
       },
     );
+  }
+
+  void _onReorderRootCollections(int oldIndex, int newIndex) {
+    unawaited(
+      widget.onReorderCollection(oldIndex, newIndex).catchError(
+        (e) => _showCollectionOrderError(e),
+      ),
+    );
+  }
+
+  void _onReorderChildCollections(
+    String parentBid,
+    List<NoteCollection> children,
+    int oldIndex,
+    int newIndex,
+  ) {
+    unawaited(
+      _reorderChildCollections(
+        parentBid: parentBid,
+        children: children,
+        oldIndex: oldIndex,
+        newIndex: newIndex,
+      ).catchError((e) => _showCollectionOrderError(e)),
+    );
+  }
+
+  Future<void> _reorderChildCollections({
+    required String parentBid,
+    required List<NoteCollection> children,
+    required int oldIndex,
+    required int newIndex,
+  }) async {
+    if (oldIndex < 0 || oldIndex >= children.length) return;
+    final targetIndex = oldIndex < newIndex ? newIndex - 1 : newIndex;
+    if (targetIndex < 0 || targetIndex >= children.length) return;
+    if (oldIndex == targetIndex) return;
+
+    final reorderedChildren = [...children];
+    final moved = reorderedChildren.removeAt(oldIndex);
+    reorderedChildren.insert(targetIndex, moved);
+    final reorderedChildBids = reorderedChildren.map((c) => c.bid).toList();
+    final childBidSet = reorderedChildBids.toSet();
+
+    final bids = await NoteLocalStore.instance.getBids(parentBid);
+    var childIndex = 0;
+    final reorderedBids = <String>[];
+    for (final bid in bids) {
+      if (childBidSet.contains(bid)) {
+        if (childIndex < reorderedChildBids.length) {
+          reorderedBids.add(reorderedChildBids[childIndex++]);
+        }
+      } else {
+        reorderedBids.add(bid);
+      }
+    }
+    while (childIndex < reorderedChildBids.length) {
+      reorderedBids.add(reorderedChildBids[childIndex++]);
+    }
+
+    await NoteLocalStore.instance.saveCollectionOrder(
+      parentBid,
+      reorderedChildBids,
+    );
+    await NoteLocalStore.instance.saveBids(parentBid, reorderedBids);
+    if (mounted) setState(() {});
+  }
+
+  void _showCollectionOrderError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('排序保存失败：$error')));
   }
 
   Future<void> _deleteChildCollection(
@@ -1379,6 +1511,7 @@ class _SidebarCollectionTile extends StatelessWidget {
     required this.hasChildren,
     required this.isExpanded,
     required this.isTopLevel,
+    required this.reorderIndex,
     required this.onToggle,
     required this.onTap,
     required this.onCopyBid,
@@ -1394,6 +1527,7 @@ class _SidebarCollectionTile extends StatelessWidget {
   final bool hasChildren;
   final bool isExpanded;
   final bool isTopLevel;
+  final int? reorderIndex;
   final VoidCallback? onToggle;
   final VoidCallback onTap;
   final VoidCallback onCopyBid;
@@ -1409,7 +1543,7 @@ class _SidebarCollectionTile extends StatelessWidget {
         ? _MacPalette.accent(isDark)
         : _MacPalette.primaryText(isDark);
 
-    return Padding(
+    final tile = Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Material(
         color: selected ? _MacPalette.selection(isDark) : Colors.transparent,
@@ -1421,7 +1555,6 @@ class _SidebarCollectionTile extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(9),
             onTap: onTap,
-            onLongPress: onRemove,
             child: Padding(
               padding: EdgeInsets.fromLTRB(4.0 + depth * 14.0, 6, 8, 6),
               child: Row(
@@ -1488,6 +1621,12 @@ class _SidebarCollectionTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+
+    if (reorderIndex == null) return tile;
+    return ReorderableDragStartListener(
+      index: reorderIndex!,
+      child: tile,
     );
   }
 

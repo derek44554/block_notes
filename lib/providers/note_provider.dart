@@ -60,7 +60,10 @@ class NoteProvider extends ChangeNotifier {
     final localBids = await service.getLocalBids(collectionBid);
     if (!isCurrentLoad()) return;
     _itemOrderIndexes = _indexBids(localBids);
-    _items = await service.getLocalItems(localBids);
+    _items = await service.getLocalItems(
+      localBids,
+      collectionBid: collectionBid,
+    );
     if (!isCurrentLoad()) return;
     _state = NoteLoadState.loaded;
     _syncing = true;
@@ -78,7 +81,10 @@ class NoteProvider extends ChangeNotifier {
       if (!isCurrentLoad()) return;
       if (latestBlock != null) _latestCollectionBlock = latestBlock;
       _itemOrderIndexes = _indexBids(freshBids);
-      _items = await service.getLocalItems(freshBids);
+      _items = await service.getLocalItems(
+        freshBids,
+        collectionBid: collectionBid,
+      );
       if (!isCurrentLoad()) return;
       _state = NoteLoadState.loaded;
     } catch (e) {
@@ -120,7 +126,10 @@ class NoteProvider extends ChangeNotifier {
     final localBids = await service.getLocalBidsByTag(collectionBid, tag);
     if (!isCurrentFilter()) return;
     _itemOrderIndexes = _indexBids(localBids);
-    _items = await service.getLocalItems(localBids);
+    _items = await service.getLocalItems(
+      localBids,
+      collectionBid: collectionBid,
+    );
     if (!isCurrentFilter()) return;
     _state = NoteLoadState.loaded;
     _syncing = true;
@@ -146,7 +155,10 @@ class NoteProvider extends ChangeNotifier {
       // 只有 tag 没变才更新
       if (isCurrentFilter()) {
         _itemOrderIndexes = _indexBids(freshBids);
-        _items = await service.getLocalItems(freshBids);
+        _items = await service.getLocalItems(
+          freshBids,
+          collectionBid: collectionBid,
+        );
         _state = NoteLoadState.loaded;
       }
     } catch (_) {
@@ -338,7 +350,10 @@ class NoteProvider extends ChangeNotifier {
     final bids = targetActiveTag == null
         ? await _service.getLocalBids(targetCollectionBid)
         : await _service.getLocalBidsByTag(targetCollectionBid, targetActiveTag);
-    final items = await _service.getLocalItems(bids);
+    final items = await _service.getLocalItems(
+      bids,
+      collectionBid: targetCollectionBid,
+    );
     if (_currentCollectionBid != targetCollectionBid ||
         _activeTag != targetActiveTag ||
         _loadToken != targetLoadToken) {

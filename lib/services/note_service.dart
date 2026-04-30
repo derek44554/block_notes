@@ -200,7 +200,10 @@ class NoteService {
       _store.getBids(collectionBid);
 
   /// 从本地读取 BID 列表对应的列表项（文档或子集合），集合在前，备忘录按更新时间倒序。
-  Future<List<NoteListItem>> getLocalItems(List<String> bids) async {
+  Future<List<NoteListItem>> getLocalItems(
+    List<String> bids, {
+    String? collectionBid,
+  }) async {
     final blocks = await _store.getBlocks(bids);
     final items = <NoteListItem>[];
     final originalIndexes = <String, int>{
@@ -211,7 +214,32 @@ class NoteService {
       if (block == null) continue;
       items.add(NoteListItem.fromBlock(block));
     }
-    return sortNoteListItems(items, originalIndexes: originalIndexes);
+    final sorted = sortNoteListItems(items, originalIndexes: originalIndexes);
+    if (collectionBid == null) return sorted;
+    return _applyLocalCollectionOrder(collectionBid, sorted);
+  }
+
+  Future<List<NoteListItem>> _applyLocalCollectionOrder(
+    String collectionBid,
+    List<NoteListItem> items,
+  ) async {
+    final collections = items.whereType<NoteListItemCollection>().toList();
+    if (collections.length < 2) return items;
+    final orderedBids = await _store.orderCollectionBids(
+      collectionBid,
+      collections.map((item) => item.bid).toList(),
+    );
+    final collectionsByBid = {
+      for (final collection in collections) collection.bid: collection,
+    };
+    final orderedCollections = [
+      for (final bid in orderedBids)
+        if (collectionsByBid[bid] != null) collectionsByBid[bid]!,
+    ];
+    return [
+      ...orderedCollections,
+      ...items.where((item) => item is! NoteListItemCollection),
+    ];
   }
 
   DateTime? _blockChangedAt(BlockModel block) =>

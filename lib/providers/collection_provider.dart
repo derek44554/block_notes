@@ -65,6 +65,21 @@ class CollectionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 仅调整本地集合显示顺序，不修改远端集合 block。
+  Future<void> reorderCollection(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= _collections.length) return;
+    final targetIndex = oldIndex < newIndex ? newIndex - 1 : newIndex;
+    if (targetIndex < 0 || targetIndex >= _collections.length) return;
+    if (oldIndex == targetIndex) return;
+
+    final updated = [..._collections];
+    final moved = updated.removeAt(oldIndex);
+    updated.insert(targetIndex, moved);
+    _collections = updated;
+    await _persist();
+    notifyListeners();
+  }
+
   /// 记录最后打开的集合 BID（null = 首页）
   Future<void> setLastOpened(String? bid) async {
     if (_lastOpenedBid == bid) return;
