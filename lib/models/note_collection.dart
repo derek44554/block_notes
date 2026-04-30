@@ -21,7 +21,7 @@ class NoteCollection {
       ? (_block['name'] as String).trim()
       : bid.length > 12 ? '${bid.substring(0, 6)}…${bid.substring(bid.length - 4)}' : bid;
 
-  /// link_tag 字段，可能是 List<String>
+  /// link_tag 字段，通常是字符串列表。
   List<String> get linkTags {
     final raw = _block['link_tag'];
     if (raw is List) return raw.whereType<String>().where((t) => t.trim().isNotEmpty).toList();

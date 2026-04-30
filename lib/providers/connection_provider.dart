@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,24 +10,35 @@ class ConnectionProvider extends ChangeNotifier {
 
   List<ConnectionModel> _connections = [];
   ConnectionModel? _activeConnection;
+  Future<SharedPreferences>? _prefsFuture;
 
   List<ConnectionModel> get connections => List.unmodifiable(_connections);
   ConnectionModel? get activeConnection => _activeConnection;
   bool get hasActiveConnection => _activeConnection != null;
 
+  Future<SharedPreferences> get _prefs =>
+      _prefsFuture ??= SharedPreferences.getInstance();
+
   Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefs;
     final raw = prefs.getStringList(_storageKey) ?? [];
-    _connections = raw
-        .map((e) => ConnectionModel.fromJson(jsonDecode(e) as Map<String, dynamic>))
-        .toList();
+    _connections = [];
+    for (final item in raw) {
+      try {
+        _connections.add(
+          ConnectionModel.fromJson(jsonDecode(item) as Map<String, dynamic>),
+        );
+      } catch (_) {}
+    }
     final activeIndex = prefs.getInt(_activeKey) ?? 0;
     if (_connections.isNotEmpty) {
       _activeConnection = _connections[activeIndex.clamp(0, _connections.length - 1)];
+    } else {
+      _activeConnection = null;
     }
     notifyListeners();
     for (final c in List.unmodifiable(_connections)) {
-      _refreshNodeData(c);
+      unawaited(_refreshNodeData(c));
     }
   }
 
@@ -52,22 +64,33 @@ class ConnectionProvider extends ChangeNotifier {
     _connections.add(connection);
     if (_connections.length == 1) {
       _activeConnection = connection;
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs;
       await prefs.setInt(_activeKey, 0);
     }
     await _persist();
     notifyListeners();
-    if (connection.nodeData == null) _refreshNodeData(connection);
+    if (connection.nodeData == null) unawaited(_refreshNodeData(connection));
   }
 
   Future<void> removeConnection(int index) async {
-    _connections.removeAt(index);
-    final prefs = await SharedPreferences.getInstance();
+    if (index < 0 || index >= _connections.length) return;
+    final prefs = await _prefs;
     final activeIndex = prefs.getInt(_activeKey) ?? 0;
-    if (activeIndex >= _connections.length) {
-      _activeConnection = _connections.isNotEmpty ? _connections[0] : null;
-      await prefs.setInt(_activeKey, 0);
+    _connections.removeAt(index);
+
+    if (_connections.isEmpty) {
+      _activeConnection = null;
+      await prefs.remove(_activeKey);
+    } else {
+      final nextActiveIndex = index == activeIndex
+          ? index.clamp(0, _connections.length - 1)
+          : index < activeIndex
+              ? (activeIndex - 1).clamp(0, _connections.length - 1)
+              : activeIndex.clamp(0, _connections.length - 1);
+      _activeConnection = _connections[nextActiveIndex];
+      await prefs.setInt(_activeKey, nextActiveIndex);
     }
+
     await _persist();
     notifyListeners();
   }
@@ -75,13 +98,13 @@ class ConnectionProvider extends ChangeNotifier {
   Future<void> setActive(int index) async {
     if (index < 0 || index >= _connections.length) return;
     _activeConnection = _connections[index];
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefs;
     await prefs.setInt(_activeKey, index);
     notifyListeners();
   }
 
   Future<void> _persist() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefs;
     await prefs.setStringList(
       _storageKey,
       _connections.map((c) => jsonEncode(c.toJson())).toList(),

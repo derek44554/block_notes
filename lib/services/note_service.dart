@@ -9,7 +9,8 @@ import 'note_local_store.dart';
 
 const _noteModelId = '93b133932057a254cc15d0f09c91ca98';
 const _collectionModelId = '1635e536a5a331a283f9da56b7b51774';
-const _batchSize = 20;
+const _batchSize = 50;
+const _maxParallelBlockFetches = 3;
 
 class NoteService {
   NoteService(this._connectionProvider);
@@ -23,11 +24,10 @@ class NoteService {
   }
 
   BlockApi get _api => BlockApi(connection: _connection);
+  static Future<void>? _pendingFlush;
 
   String get _nodeBid {
     final nodeData = _connection.nodeData;
-    // ignore: avoid_print
-    print('[NoteService] nodeData keys=${nodeData?.keys.toList()}, nodeData=$nodeData');
     if (nodeData == null) throw StateError('Node data not available.');
     // /node/node 响应结构: { data: { bid: '...' } } 或直接 { bid: '...' }
     final inner = nodeData['data'];
@@ -47,7 +47,9 @@ class NoteService {
     final response = await _api.getBlock(bid: bid);
     final data = response['data'];
     final blockData = data is Map<String, dynamic> ? data : response;
-    return NoteCollection.fromBlock(BlockModel(data: blockData));
+    final block = BlockModel(data: blockData);
+    await _store.saveBlock(bid, block);
+    return NoteCollection.fromBlock(block);
   }
 
   /// 在节点上新建一个集合 block，返回创建好的 NoteCollection
@@ -64,24 +66,11 @@ class NoteService {
       'tag': <String>[],
       'link': parentBid != null ? [parentBid] : <String>[],
     };
-    // ignore: avoid_print
-    print('[NoteService] createCollection: bid=$bid, nodeBid=$nodeBid');
-    try {
-      final result = await _api.saveBlock(data: data, receiverBid: nodeBid);
-      // ignore: avoid_print
-      print('[NoteService] createCollection result: $result');
-    } catch (e, st) {
-      // ignore: avoid_print
-      print('[NoteService] createCollection ERROR: $e\n$st');
-      rethrow;
-    }
+    await _api.saveBlock(data: data, receiverBid: nodeBid);
     final block = BlockModel(data: data);
     await _store.saveBlock(bid, block);
     if (parentBid != null) {
-      final bids = await _store.getBids(parentBid);
-      if (!bids.contains(bid)) {
-        await _store.saveBids(parentBid, [bid, ...bids]);
-      }
+      await _store.addBidToCollection(parentBid, bid);
     }
     return NoteCollection.fromBlock(block);
   }
@@ -91,12 +80,8 @@ class NoteService {
     required String targetBid,
     required String currentCollectionBid,
   }) async {
-    // ignore: avoid_print
-    print('[NoteService] joinCollection: targetBid=$targetBid, currentBid=$currentCollectionBid');
     // 获取目标 block 最新数据
     final response = await _api.getBlock(bid: targetBid);
-    // ignore: avoid_print
-    print('[NoteService] joinCollection getBlock response: $response');
     final raw = response['data'];
     if (raw == null || raw is! Map<String, dynamic>) {
       throw Exception('未找到 BID 对应的集合');
@@ -111,17 +96,8 @@ class NoteService {
     links.add(currentCollectionBid);
     updatedData['link'] = links;
     updatedData['bid'] = targetBid;
-    // ignore: avoid_print
-    print('[NoteService] joinCollection saveBlock data: $updatedData');
-    try {
-      final result = await _api.saveBlock(data: updatedData);
-      // ignore: avoid_print
-      print('[NoteService] joinCollection result: $result');
-    } catch (e, st) {
-      // ignore: avoid_print
-      print('[NoteService] joinCollection ERROR: $e\n$st');
-      rethrow;
-    }
+    await _api.saveBlock(data: updatedData);
+    await _store.addBidToCollection(targetBid, currentCollectionBid);
   }
 
   // ── 核心同步 ───────────────────────────────────────────────
@@ -131,8 +107,6 @@ class NoteService {
     final response = await _api.getBlock(bid: collectionBid);
     final data = response['data'];
     final blockData = data is Map<String, dynamic> ? data : response;
-    // ignore: avoid_print
-    print('[NoteService] refreshCollection $collectionBid => link_tag=${blockData['link_tag']}');
     final block = BlockModel(data: blockData);
     await _store.saveBlock(collectionBid, block);
     return block;
@@ -140,38 +114,35 @@ class NoteService {
 
   /// 同步外链 BID 列表并持久化（合并本地新增项，防止索引延迟导致本地项消失）
   Future<List<String>> syncCollection(String collectionBid) async {
+    unawaited(flushPendingWrites());
     final freshBids = await _syncBids(collectionBid);
     final localBids = await _store.getBids(collectionBid);
-    
-    // 合并策略：保留本地存在但服务器尚未索引到的 BID，且保持它们在顶部
-    final mergedBids = List<String>.from(freshBids);
-    final freshSet = Set<String>.from(freshBids);
-    
-    // 将本地有但服务器没有的项（通常是刚创建还没索引到的）插入到最前面
-    for (final bid in localBids.reversed) {
-      if (!freshSet.contains(bid)) {
-        mergedBids.insert(0, bid);
-      }
-    }
-    
+    final pendingBids = (await _store.getPendingWriteBids()).toSet();
+    final optimisticBids = await _store.getOptimisticBids(collectionBid);
+    final mergedBids = _mergeFreshWithPreservedLocal(
+      freshBids: freshBids,
+      localBids: localBids,
+      preserveBids: {...pendingBids, ...optimisticBids},
+    );
+
+    await _store.clearOptimisticBids(collectionBid, freshBids);
     await _store.saveBids(collectionBid, mergedBids);
     return mergedBids;
   }
 
   /// 按 link_tag 筛选同步外链 BID（同样应用合并策略）
   Future<List<String>> syncCollectionByTag(String collectionBid, String tag) async {
+    unawaited(flushPendingWrites());
     final freshBids = await _syncBids(collectionBid, tag: tag);
-    final localBids = await _store.getBidsForTag(collectionBid, tag);
-    
-    final mergedBids = List<String>.from(freshBids);
-    final freshSet = Set<String>.from(freshBids);
-    
-    for (final bid in localBids.reversed) {
-      if (!freshSet.contains(bid)) {
-        mergedBids.insert(0, bid);
-      }
-    }
-    
+    final localBids = await _getLocalBidsMatchingTag(collectionBid, tag);
+    final pendingBids = (await _store.getPendingWriteBids()).toSet();
+    final optimisticBids = await _store.getOptimisticBids(collectionBid);
+    final mergedBids = _mergeFreshWithPreservedLocal(
+      freshBids: freshBids,
+      localBids: localBids,
+      preserveBids: {...pendingBids, ...optimisticBids},
+    );
+
     await _store.saveBidsForTag(collectionBid, tag, mergedBids);
     return mergedBids;
   }
@@ -188,28 +159,20 @@ class NoteService {
     final missing = await _store.getMissingBids(freshBids);
 
     // 3. 分批拉取缺失的 block 详情
-    for (var i = 0; i < missing.length; i += _batchSize) {
-      final batch = missing.sublist(i, (i + _batchSize).clamp(0, missing.length));
-      try {
-        final response = await _api.getMultipleBlocks(bids: batch);
-        final data = response['data'] ?? response;
-        final blocks = data['blocks'];
-        if (blocks is List) {
-          final models = blocks
-              .whereType<Map<String, dynamic>>()
-              .map((e) => BlockModel(data: e))
-              .toList();
-          await _store.saveBlocks(models);
-        }
-      } catch (_) {}
-    }
+    await _fetchMissingBlocks(missing);
 
     return freshBids;
   }
 
   /// 从本地缓存按 link_tag 筛选 BID 列表
-  Future<List<String>> getLocalBidsByTag(String collectionBid, String tag) =>
-      _store.getBidsForTag(collectionBid, tag);
+  Future<List<String>> getLocalBidsByTag(String collectionBid, String tag) async {
+    final allLocalBids = await _store.getBids(collectionBid);
+    final localMatches = await _getLocalBidsMatchingTag(collectionBid, tag);
+    if (allLocalBids.isEmpty) {
+      return _store.getBidsForTag(collectionBid, tag);
+    }
+    return localMatches;
+  }
 
   /// 从本地读取集合的 BID 列表
   Future<List<String>> getLocalBids(String collectionBid) =>
@@ -218,24 +181,145 @@ class NoteService {
   /// 从本地读取 BID 列表对应的列表项（文档或子集合），集合置顶
   Future<List<NoteListItem>> getLocalItems(List<String> bids) async {
     final blocks = await _store.getBlocks(bids);
-    final items = bids
-        .where((bid) => blocks.containsKey(bid))
-        .map((bid) => NoteListItem.fromBlock(blocks[bid]!))
+    final collections = <NoteListItem>[];
+    final notes = <NoteListItem>[];
+    for (final bid in bids) {
+      final block = blocks[bid];
+      if (block == null) continue;
+      final item = NoteListItem.fromBlock(block);
+      if (item is NoteListItemCollection) {
+        collections.add(item);
+      } else {
+        notes.add(item);
+      }
+    }
+    return [...collections, ...notes];
+  }
+
+  Future<void> _fetchMissingBlocks(List<String> missing) async {
+    final chunks = <List<String>>[];
+    for (var i = 0; i < missing.length; i += _batchSize) {
+      final end = i + _batchSize > missing.length
+          ? missing.length
+          : i + _batchSize;
+      chunks.add(missing.sublist(i, end));
+    }
+
+    for (var i = 0; i < chunks.length; i += _maxParallelBlockFetches) {
+      final end = i + _maxParallelBlockFetches > chunks.length
+          ? chunks.length
+          : i + _maxParallelBlockFetches;
+      await Future.wait(chunks.sublist(i, end).map(_fetchBlockBatch));
+    }
+  }
+
+  Future<void> _fetchBlockBatch(List<String> batch) async {
+    if (batch.isEmpty) return;
+    try {
+      final response = await _api.getMultipleBlocks(bids: batch);
+      final models = _parseBlocksResponse(response);
+      if (models.isNotEmpty) {
+        await _store.saveBlocks(models);
+      }
+    } catch (_) {
+      // 单个批次失败不应中断整个集合加载，后续同步还会重试。
+    }
+  }
+
+  List<BlockModel> _parseBlocksResponse(Map<String, dynamic> response) {
+    final data = response['data'] ?? response;
+    final Object? rawBlocks = switch (data) {
+      {'blocks': final blocks} => blocks,
+      {'data': final blocks} => blocks,
+      List() => data,
+      _ => null,
+    };
+    if (rawBlocks is! List) return const [];
+    return rawBlocks
+        .whereType<Map<String, dynamic>>()
+        .map((data) => BlockModel(data: data))
         .toList();
-    // 集合排前，文档排后，各自保持原有顺序
-    items.sort((a, b) {
-      final aIsCol = a is NoteListItemCollection;
-      final bIsCol = b is NoteListItemCollection;
-      if (aIsCol == bIsCol) return 0;
-      return aIsCol ? -1 : 1;
-    });
-    return items;
+  }
+
+  Future<List<String>> _getLocalBidsMatchingTag(
+    String collectionBid,
+    String tag,
+  ) async {
+    final bids = await _store.getBids(collectionBid);
+    if (bids.isEmpty) return const [];
+    final blocks = await _store.getBlocks(bids);
+    return bids.where((bid) {
+      final block = blocks[bid];
+      return block != null && _blockHasLinkTag(block, tag);
+    }).toList();
+  }
+
+  bool _blockHasLinkTag(BlockModel block, String tag) {
+    final normalizedTag = tag.trim();
+    if (normalizedTag.isEmpty) return false;
+    final raw = block.data['link_tag'];
+    if (raw is List) {
+      return raw
+          .whereType<String>()
+          .map((value) => value.trim())
+          .contains(normalizedTag);
+    }
+    if (raw is String) return raw.trim() == normalizedTag;
+    return false;
+  }
+
+  List<String> _mergeFreshWithPreservedLocal({
+    required List<String> freshBids,
+    required List<String> localBids,
+    required Set<String> preserveBids,
+  }) {
+    final merged = List<String>.from(freshBids);
+    final freshSet = Set<String>.from(freshBids);
+    for (final bid in localBids.reversed) {
+      if (!freshSet.contains(bid) && preserveBids.contains(bid)) {
+        merged.insert(0, bid);
+      }
+    }
+    return merged;
   }
 
   // ── 单个 block 刷新（进入文档时调用）─────────────────────
 
+  Future<void> flushPendingWrites() {
+    final running = _pendingFlush;
+    if (running != null) return running;
+    final future = _flushPendingWrites();
+    _pendingFlush = future.whenComplete(() => _pendingFlush = null);
+    return _pendingFlush!;
+  }
+
+  Future<void> _flushPendingWrites() async {
+    final pendingBids = await _store.getPendingWriteBids();
+    for (final bid in pendingBids) {
+      final block = await _store.getBlock(bid);
+      if (block == null) {
+        await _store.clearPendingWrite(bid);
+        continue;
+      }
+      try {
+        await _api.saveBlock(data: block.data);
+        await _store.clearPendingWrite(bid);
+      } catch (e) {
+        debugPrint('[NoteService] Pending write retry failed for $bid: $e');
+        return;
+      }
+    }
+  }
+
   /// 拉取单个 block 最新数据，更新本地缓存，返回最新 NoteModel
   Future<NoteModel> refreshNote(String bid) async {
+    final pendingBids = await _store.getPendingWriteBids();
+    if (pendingBids.contains(bid)) {
+      unawaited(flushPendingWrites());
+      final localBlock = await _store.getBlock(bid);
+      if (localBlock != null) return NoteModel.fromBlock(localBlock);
+    }
+
     final response = await _api.getBlock(bid: bid);
     final data = response['data'];
     final blockData = data is Map<String, dynamic> ? data : response;
@@ -251,38 +335,35 @@ class NoteService {
     required String content,
     required String collectionBid,
   }) async {
-    final bid = generateBidV2(_nodeBid);
-    final data = {
+    final nodeBid = _nodeBid;
+    final bid = generateBidV2(nodeBid);
+    final now = DateTime.now().toIso8601String();
+    final data = <String, dynamic>{
       'bid': bid,
       'model': _noteModelId,
       'name': title,
       'content': content,
+      'node_bid': nodeBid,
       'link': [collectionBid],
-      'add_time': DateTime.now().toIso8601String(),
+      'tag': <String>[],
+      'add_time': now,
+      'update_time': now,
     };
-    
-    // 1. 立即持久化到本地缓存，确保本地能立刻看到
+
     final block = BlockModel(data: data);
     await _store.saveBlock(bid, block);
-    
-    // 将新 bid 加入集合的本地 BID 列表
-    final bids = await _store.getBids(collectionBid);
-    if (!bids.contains(bid)) {
-      final newBids = [bid, ...bids];
-      await _store.saveBids(collectionBid, newBids);
-      // 同时更新按 tag 筛选的缓存（如果有的话），这里简单起见，直接清空 tag 缓存让它下次重新拉取
-      // 或者更精细地更新，但清空是最安全的
-    }
+    await _store.addBidToCollection(collectionBid, bid);
+    await _store.markPendingWrite(bid);
 
-    // 2. 异步发送到网络，不阻塞返回
     unawaited(() async {
       try {
         await _api.saveBlock(data: data);
+        await _store.clearPendingWrite(bid);
       } catch (e) {
         debugPrint('[NoteService] Background createNote failed: $e');
       }
     }());
-    
+
     return NoteModel.fromBlock(block);
   }
 
@@ -291,53 +372,50 @@ class NoteService {
     required String title,
     required String content,
   }) async {
-    // 1. 先同步到本地，保证 UI 响应和本地数据最新
     await updateNoteLocal(bid: bid, title: title, content: content);
 
-    // 2. 准备同步到服务器。
-    // 为了不丢失 link、tag 等关键字段，我们合并本地缓存和远端数据
     final localBlock = await _store.getBlock(bid);
-    
-    Map<String, dynamic> updated;
-    try {
-      // 尝试拉取远端数据作为基准（以获取最新的 link/tag/node_bid 等）
-      final response = await _api.getBlock(bid: bid);
-      final data = response['data'];
-      final remoteData = data is Map<String, dynamic> ? data : response;
-      updated = Map<String, dynamic>.from(remoteData);
-    } catch (_) {
-      // 远端拉取失败（可能是新文档还没同步上去），则以本地为基准
-      updated = localBlock != null 
-          ? Map<String, dynamic>.from(localBlock.data) 
-          : {'bid': bid, 'model': _noteModelId};
+    Map<String, dynamic> updated = localBlock != null
+        ? Map<String, dynamic>.from(localBlock.data)
+        : <String, dynamic>{'bid': bid, 'model': _noteModelId};
+
+    if (_needsRemoteBase(updated)) {
+      try {
+        final response = await _api.getBlock(bid: bid);
+        final data = response['data'];
+        final remoteData = data is Map<String, dynamic> ? data : response;
+        updated = {
+          ...Map<String, dynamic>.from(remoteData),
+          ...updated,
+        };
+      } catch (_) {
+        // 远端基准获取失败时继续使用本地完整缓存，写入会进入待同步队列。
+      }
     }
 
-    // 3. 覆盖用户修改的字段
     updated['bid'] = bid;
+    updated['model'] ??= _noteModelId;
     updated['name'] = title;
     updated['content'] = content;
-    
-    // 关键：如果本地有 link 且远端没有（或者远端为空），强制保留本地 link
+    updated['update_time'] = DateTime.now().toIso8601String();
+
     if (localBlock != null) {
       final localLink = localBlock.data['link'];
-      if (localLink != null && (updated['link'] == null || (updated['link'] as List).isEmpty)) {
+      final updatedLink = updated['link'];
+      if (localLink != null &&
+          (updatedLink is! List || updatedLink.isEmpty)) {
         updated['link'] = localLink;
       }
     }
 
-    if (updated['node_bid'] == null || (updated['node_bid'] as String).isEmpty) {
-      // updated['node_bid'] = _nodeBid;
-    }
-
-    // 4. 提交到服务器
+    await _store.saveBlock(bid, BlockModel(data: updated));
+    await _store.markPendingWrite(bid);
     try {
       await _api.saveBlock(data: updated);
+      await _store.clearPendingWrite(bid);
     } catch (e) {
       debugPrint('[NoteService] Background updateNote failed: $e');
     }
-    
-    // 5. 提交成功后再写一次本地，确保本地缓存是最终完整的版本
-    await _store.saveBlock(bid, BlockModel(data: updated));
   }
 
   /// 仅更新本地缓存（用于实时编辑保存）
@@ -353,15 +431,18 @@ class NoteService {
       data['name'] = title;
       data['content'] = content;
     } else {
-      data = {
+      data = <String, dynamic>{
         'bid': bid,
         'model': _noteModelId,
         'name': title,
         'content': content,
-        'node_bid': _nodeBid,
       };
+      final nodeBid = _tryNodeBid();
+      if (nodeBid != null) data['node_bid'] = nodeBid;
     }
+    data['update_time'] = DateTime.now().toIso8601String();
     await _store.saveBlock(bid, BlockModel(data: data));
+    await _store.markPendingWrite(bid);
   }
 
   /// 更新文档的 tag 字段（不影响其他字段）
@@ -369,21 +450,51 @@ class NoteService {
     required String bid,
     required List<String> tags,
   }) async {
-    final response = await _api.getBlock(bid: bid);
-    final data = response['data'];
-    final blockData = data is Map<String, dynamic> ? data : response;
-    final updated = Map<String, dynamic>.from(blockData);
+    final localBlock = await _store.getBlock(bid);
+    Map<String, dynamic> updated;
+    try {
+      final response = await _api.getBlock(bid: bid);
+      final data = response['data'];
+      final blockData = data is Map<String, dynamic> ? data : response;
+      updated = Map<String, dynamic>.from(blockData);
+      if (localBlock != null) {
+        updated = {
+          ...updated,
+          'name': localBlock.data['name'] ?? updated['name'],
+          'content': localBlock.data['content'] ?? updated['content'],
+          'update_time': localBlock.data['update_time'] ?? updated['update_time'],
+        };
+      }
+    } catch (_) {
+      if (localBlock == null) rethrow;
+      updated = Map<String, dynamic>.from(localBlock.data);
+    }
     updated['bid'] = bid;
     updated['tag'] = tags;
-    if (updated['node_bid'] == null || (updated['node_bid'] as String).isEmpty) {
-      updated['node_bid'] = _nodeBid;
+    final nodeBid = updated['node_bid'];
+    if (nodeBid is! String || nodeBid.isEmpty) {
+      final resolvedNodeBid = _tryNodeBid();
+      if (resolvedNodeBid != null) updated['node_bid'] = resolvedNodeBid;
     }
-    await _api.saveBlock(data: updated, receiverBid: bid.substring(0, 10));
     await _store.saveBlock(bid, BlockModel(data: updated));
+    await _store.markPendingWrite(bid);
+    try {
+      await _api.saveBlock(data: updated, receiverBid: bid.substring(0, 10));
+      await _store.clearPendingWrite(bid);
+    } catch (e) {
+      debugPrint('[NoteService] Background updateNoteTags failed: $e');
+    }
   }
 
-  Future<void> deleteNote(String bid) async {
+  Future<void> deleteNote(String bid, {String? collectionBid}) async {
     await _api.deleteBlock(bid: bid);
+    if (collectionBid != null) {
+      await _store.removeBidFromCollection(collectionBid, bid);
+      await _store.removeBlock(bid);
+      await _store.clearPendingWrite(bid);
+    } else {
+      await _store.removeBidEverywhere(bid);
+    }
   }
 
   /// 将 item 移动到目标集合：
@@ -418,16 +529,10 @@ class NoteService {
     await _store.saveBlock(bid, BlockModel(data: updated));
 
     // 从原集合的本地 BID 列表里移除
-    final fromBids = await _store.getBids(fromCollectionBid);
-    if (fromBids.contains(bid)) {
-      await _store.saveBids(fromCollectionBid, fromBids.where((b) => b != bid).toList());
-    }
+    await _store.removeBidFromCollection(fromCollectionBid, bid);
 
     // 加入目标集合的本地 BID 列表
-    final toBids = await _store.getBids(targetCollectionBid);
-    if (!toBids.contains(bid)) {
-      await _store.saveBids(targetCollectionBid, [bid, ...toBids]);
-    }
+    await _store.addBidToCollection(targetCollectionBid, bid);
   }
 
   /// 更新集合的 link_tag 字段
@@ -440,5 +545,21 @@ class NoteService {
     await _api.saveBlock(data: updated);
     // 更新本地缓存
     await _store.saveBlock(collectionBid, BlockModel(data: updated));
+    await _store.clearTagBids(collectionBid);
+  }
+
+  bool _needsRemoteBase(Map<String, dynamic> data) {
+    final link = data['link'];
+    return data['model'] == null ||
+        data['tag'] == null ||
+        (link is! List || link.isEmpty);
+  }
+
+  String? _tryNodeBid() {
+    try {
+      return _nodeBid;
+    } catch (_) {
+      return null;
+    }
   }
 }

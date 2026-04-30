@@ -42,6 +42,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
   String? _newCreatedBid;
   String _lastSyncedTitle = '';
   String _lastSyncedContent = '';
+  bool _applyingText = false;
+  bool _remoteSyncing = false;
+  bool _remoteSyncQueued = false;
+  int _editRevision = 0;
 
   bool get _isEditing => widget.note != null;
   bool get _isEffectivelyEditing => _isEditing || _newCreatedBid != null;
@@ -67,6 +71,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
   }
 
   void _onTextChanged() {
+    if (_applyingText) return;
+    _editRevision++;
+
     // 1. 快速本地缓存 (500ms)
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 500), () {
@@ -88,7 +95,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
     if (title == _lastSyncedTitle && content == _lastSyncedContent) {
       return;
     }
-    
+
     // 如果是新文档且没写内容，不创建
     if (!_isEffectivelyEditing && title.isEmpty && content.isEmpty) {
       return;
@@ -117,6 +124,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
   }
 
   Future<void> _syncRemote() async {
+    if (_remoteSyncing) {
+      _remoteSyncQueued = true;
+      return;
+    }
+
     final title = _titleCtrl.text.trim();
     final content = _contentCtrl.text.trim();
 
@@ -126,7 +138,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
     }
 
     final finalTitle = title.isEmpty ? '无标题' : title;
-    
+
+    _remoteSyncing = true;
     try {
       if (_isEffectivelyEditing) {
         await widget.noteProvider.updateNote(
@@ -153,6 +166,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
       }
     } catch (e) {
       debugPrint('[SYNC] Remote sync failed: $e');
+    } finally {
+      _remoteSyncing = false;
+      if (_remoteSyncQueued && mounted) {
+        _remoteSyncQueued = false;
+        unawaited(_syncRemote());
+      }
     }
   }
 
@@ -176,18 +195,18 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
 
   Future<void> _refreshLatest() async {
     if (!mounted) return;
+    final revision = _editRevision;
 
     // Step 1: 先从本地缓存读取，立即展示
     final store = NoteLocalStore.instance;
     final localBlock = await store.getBlock(widget.note!.bid);
-    if (localBlock != null && mounted) {
+    if (localBlock != null && mounted && revision == _editRevision) {
       final local = NoteModel.fromBlock(localBlock);
-      if (local.title.isNotEmpty && local.title != _titleCtrl.text) {
-        _titleCtrl.text = local.title;
-      }
-      if (local.content.isNotEmpty && local.content != _contentCtrl.text) {
-        _contentCtrl.text = local.content;
-      }
+      _applyText(
+        title: local.title.isEmpty ? null : local.title,
+        content: local.content.isEmpty ? null : local.content,
+        updateBaseline: true,
+      );
       setState(() => _tags = List<String>.from(local.tags));
     }
 
@@ -196,9 +215,14 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
     try {
       final latest = await widget.noteProvider.refreshNote(widget.note!.bid);
       if (!mounted) return;
-      if (latest.title != _titleCtrl.text) _titleCtrl.text = latest.title;
-      if (latest.content != _contentCtrl.text) _contentCtrl.text = latest.content;
-      setState(() => _tags = List<String>.from(latest.tags));
+      if (revision == _editRevision) {
+        _applyText(
+          title: latest.title,
+          content: latest.content,
+          updateBaseline: true,
+        );
+        setState(() => _tags = List<String>.from(latest.tags));
+      }
     } catch (_) {
     } finally {
       if (mounted) setState(() => _refreshing = false);
@@ -210,7 +234,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
     _debounceTimer?.cancel();
     _remoteSyncTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
-    _autoSave();
+    unawaited(_autoSave());
     _titleCtrl.dispose();
     _contentCtrl.dispose();
     _titleFocus.dispose();
@@ -221,12 +245,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
   Future<void> _autoSave() async {
     final title = _titleCtrl.text.trim();
     final content = _contentCtrl.text.trim();
-    
+
     // 检查是否有实质性内容修改（避免空文档或未修改文档的提交）
     if (title == _lastSyncedTitle && content == _lastSyncedContent) {
       return;
     }
-    
+
     if (title.isEmpty && content.isEmpty) return;
 
     final targetCollection = widget.collection ?? _collectionProvider?.defaultCollection;
@@ -257,6 +281,28 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
   void _onTitleSubmitted(String _) {
     _contentFocus.requestFocus();
     _contentCtrl.selection = const TextSelection.collapsed(offset: 0);
+  }
+
+  void _applyText({
+    String? title,
+    String? content,
+    bool updateBaseline = false,
+  }) {
+    _applyingText = true;
+    if (title != null && title != _titleCtrl.text) {
+      _titleCtrl.text = title;
+      _titleCtrl.selection = TextSelection.collapsed(offset: title.length);
+    }
+    if (content != null && content != _contentCtrl.text) {
+      _contentCtrl.text = content;
+      _contentCtrl.selection = TextSelection.collapsed(offset: content.length);
+    }
+    _applyingText = false;
+
+    if (updateBaseline) {
+      _lastSyncedTitle = _titleCtrl.text.trim();
+      _lastSyncedContent = _contentCtrl.text.trim();
+    }
   }
 
   void _mergeToTitle() {
@@ -495,8 +541,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
   }
 
   Future<void> _handleBack() async {
+    final navigator = Navigator.of(context);
     await _autoSave();
-    if (mounted) Navigator.of(context).pop();
+    if (mounted) navigator.pop();
   }
 
   @override
@@ -509,8 +556,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        final navigator = Navigator.of(context);
         await _autoSave();
-        if (mounted) Navigator.of(context).pop();
+        if (mounted) navigator.pop();
       },
       child: Scaffold(
         backgroundColor: bgColor,

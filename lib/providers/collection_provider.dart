@@ -9,9 +9,13 @@ const _lastOpenedKey = 'note_last_opened_bid';
 class CollectionProvider extends ChangeNotifier {
   List<NoteCollection> _collections = [];
   String? _lastOpenedBid;
+  Future<SharedPreferences>? _prefsFuture;
 
   List<NoteCollection> get collections => List.unmodifiable(_collections);
   String? get lastOpenedBid => _lastOpenedBid;
+
+  Future<SharedPreferences> get _prefs =>
+      _prefsFuture ??= SharedPreferences.getInstance();
 
   /// 非默认集合列表
   List<NoteCollection> get regularCollections =>
@@ -27,15 +31,17 @@ class CollectionProvider extends ChangeNotifier {
   }
 
   Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefs;
     final raw = prefs.getStringList(_collectionsKey) ?? [];
-    try {
-      _collections = raw
-          .map((e) => NoteCollection.fromJson(jsonDecode(e) as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
-      _collections = [];
+    final loaded = <NoteCollection>[];
+    for (final item in raw) {
+      try {
+        loaded.add(
+          NoteCollection.fromJson(jsonDecode(item) as Map<String, dynamic>),
+        );
+      } catch (_) {}
     }
+    _collections = loaded;
     _lastOpenedBid = prefs.getString(_lastOpenedKey);
     notifyListeners();
   }
@@ -61,8 +67,9 @@ class CollectionProvider extends ChangeNotifier {
 
   /// 记录最后打开的集合 BID（null = 首页）
   Future<void> setLastOpened(String? bid) async {
+    if (_lastOpenedBid == bid) return;
     _lastOpenedBid = bid;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefs;
     if (bid != null) {
       await prefs.setString(_lastOpenedKey, bid);
     } else {
@@ -85,7 +92,7 @@ class CollectionProvider extends ChangeNotifier {
   }
 
   Future<void> _persist() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _prefs;
     await prefs.setStringList(
       _collectionsKey,
       _collections.map((c) => jsonEncode(c.toJson())).toList(),

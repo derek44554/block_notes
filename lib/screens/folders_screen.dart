@@ -118,14 +118,15 @@ class _FoldersScreenState extends State<FoldersScreen> {
     if (confirmed != true || ctrl.text.trim().isEmpty) return;
     if (!context.mounted) return;
 
+    final connectionProvider = context.read<ConnectionProvider>();
+    final collectionProvider = context.read<CollectionProvider>();
+    final messenger = ScaffoldMessenger.of(context);
     try {
-      final service = NoteService(context.read<ConnectionProvider>());
+      final service = NoteService(connectionProvider);
       final collection = await service.createCollection(ctrl.text.trim(), parentBid: parentBid);
-      await context.read<CollectionProvider>().addCollection(collection);
+      await collectionProvider.addCollection(collection);
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败：$e')));
-      }
+      messenger.showSnackBar(SnackBar(content: Text('创建失败：$e')));
     }
   }
 
@@ -152,14 +153,15 @@ class _FoldersScreenState extends State<FoldersScreen> {
     if (confirmed != true || ctrl.text.trim().isEmpty) return;
     if (!context.mounted) return;
 
+    final connectionProvider = context.read<ConnectionProvider>();
+    final collectionProvider = context.read<CollectionProvider>();
+    final messenger = ScaffoldMessenger.of(context);
     try {
-      final service = NoteService(context.read<ConnectionProvider>());
+      final service = NoteService(connectionProvider);
       final collection = await service.fetchCollection(ctrl.text.trim());
-      await context.read<CollectionProvider>().addCollection(collection);
+      await collectionProvider.addCollection(collection);
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('加入失败：$e')));
-      }
+      messenger.showSnackBar(SnackBar(content: Text('加入失败：$e')));
     }
   }
 

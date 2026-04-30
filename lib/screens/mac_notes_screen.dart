@@ -41,9 +41,11 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
   bool _bootstrapped = false;
   bool _loadingNote = false;
   bool _syncingEditor = false;
+  bool _remoteSyncQueued = false;
   bool _applyingEditorText = false;
   int _collectionLoadToken = 0;
   int _noteLoadToken = 0;
+  int _editorRevision = 0;
   String _lastRemoteTitle = '';
   String _lastRemoteContent = '';
 
@@ -76,7 +78,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
     _noteProvider?.removeListener(_onItemsChanged);
     _localSaveTimer?.cancel();
     _remoteSaveTimer?.cancel();
-    _syncEditorRemote(updateUi: false);
+    unawaited(_syncEditorRemote(updateUi: false));
     _searchCtrl.dispose();
     _titleCtrl.dispose();
     _contentCtrl.dispose();
@@ -183,10 +185,12 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
       _lastRemoteTitle = note.title;
       _lastRemoteContent = note.content;
     });
+    final revision = _editorRevision;
 
     try {
       final latest = await _noteProvider?.refreshNote(note.bid);
       if (!mounted || token != _noteLoadToken || latest == null) return;
+      if (revision != _editorRevision) return;
       setState(() {
         _selectedNote = latest;
         _selectedTags = List<String>.from(latest.tags);
@@ -218,6 +222,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
 
   void _onEditorChanged() {
     if (_applyingEditorText || _selectedNoteBid == null) return;
+    _editorRevision++;
     _localSaveTimer?.cancel();
     _localSaveTimer = Timer(
       const Duration(milliseconds: 350),
@@ -258,7 +263,11 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
 
   Future<void> _syncEditorRemote({bool updateUi = true}) async {
     final bid = _selectedNoteBid;
-    if (bid == null || _syncingEditor) return;
+    if (bid == null) return;
+    if (_syncingEditor) {
+      _remoteSyncQueued = true;
+      return;
+    }
     final title = _normalizedTitle;
     final content = _contentCtrl.text;
     if (title == _lastRemoteTitle && content == _lastRemoteContent) return;
@@ -267,12 +276,18 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
     if (updateUi && mounted) setState(() {});
     try {
       await _noteProvider?.updateNote(bid: bid, title: title, content: content);
-      _lastRemoteTitle = title;
-      _lastRemoteContent = content;
+      if (_selectedNoteBid == bid) {
+        _lastRemoteTitle = title;
+        _lastRemoteContent = content;
+      }
     } catch (_) {
     } finally {
       _syncingEditor = false;
       if (updateUi && mounted) setState(() {});
+      if (_remoteSyncQueued && mounted) {
+        _remoteSyncQueued = false;
+        unawaited(_syncEditorRemote(updateUi: updateUi));
+      }
     }
   }
 
@@ -332,16 +347,6 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
   Future<void> _deleteNote(NoteModel note) async {
     await _selectNote(note);
     await _deleteSelectedNote();
-  }
-
-  Future<void> _copySelectedBid() async {
-    final bid = _selectedNoteBid;
-    if (bid == null) return;
-    await Clipboard.setData(ClipboardData(text: bid));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('BID 已复制'), duration: Duration(seconds: 2)),
-    );
   }
 
   Future<void> _copyNoteBid(NoteModel note) async {
@@ -1331,78 +1336,6 @@ class _ArticleListHeader extends StatelessWidget {
   }
 }
 
-class _ListSectionLabel extends StatelessWidget {
-  const _ListSectionLabel({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).colorScheme.brightness == Brightness.dark;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 14, 8, 6),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w800,
-          color: _MacPalette.primaryText(isDark),
-        ),
-      ),
-    );
-  }
-}
-
-class _CollectionListTile extends StatelessWidget {
-  const _CollectionListTile({required this.collection, required this.onTap});
-
-  final NoteCollection collection;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).colorScheme.brightness == Brightness.dark;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Container(
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: _MacPalette.divider(isDark)),
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.folder_outlined,
-                size: 20,
-                color: _MacPalette.secondaryText(isDark),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  collection.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: _MacPalette.primaryText(isDark),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _NoteListTile extends StatelessWidget {
   const _NoteListTile({
     required this.note,
@@ -1814,7 +1747,6 @@ class _MacIconButton extends StatelessWidget {
 
 class _MacDivider extends StatelessWidget {
   const _MacDivider({required this.isDark}) : horizontal = false;
-  const _MacDivider.horizontal({required this.isDark}) : horizontal = true;
 
   final bool isDark;
   final bool horizontal;
@@ -1847,8 +1779,6 @@ class _MacPalette {
       dark ? const Color(0xFFB98511) : const Color(0xFFD89500);
   static Color noteHover(bool dark) =>
       dark ? const Color(0xFF2B2B2B) : const Color(0xFFEDE7DB);
-  static Color toolbarPill(bool dark) =>
-      dark ? const Color(0xFF2C2C2C) : const Color(0xFFECE7DC);
   static Color accent(bool dark) =>
       dark ? const Color(0xFFD1A332) : const Color(0xFF9A6A00);
   static Color primaryText(bool dark) =>
@@ -1873,11 +1803,6 @@ String _relativeDate(DateTime date) {
   if (days == 1) return '昨天';
   if (days < 7) return '星期${_weekday(date.weekday)}';
   return '${date.year}/${date.month}/${date.day}';
-}
-
-String _fullDate(DateTime date) {
-  final minute = date.minute.toString().padLeft(2, '0');
-  return '${date.year}年${date.month}月${date.day}日 ${date.hour}:$minute';
 }
 
 String _weekday(int weekday) {

@@ -56,17 +56,24 @@ class NoteProvider extends ChangeNotifier {
     notifyListeners();
 
     // Step 2: 后台同步（先刷新集合自身，再同步外链）
+    final collectionFuture = service
+        .refreshCollection(collectionBid)
+        .then<BlockModel?>((block) => block)
+        .catchError((_) => null);
     try {
-      final latestBlock = await service.refreshCollection(collectionBid);
-      if (!isCurrentLoad()) return;
-      _latestCollectionBlock = latestBlock;
       final freshBids = await service.syncCollection(collectionBid);
       if (!isCurrentLoad()) return;
+      final latestBlock = await collectionFuture;
+      if (!isCurrentLoad()) return;
+      if (latestBlock != null) _latestCollectionBlock = latestBlock;
       _items = await service.getLocalItems(freshBids);
       if (!isCurrentLoad()) return;
       _state = NoteLoadState.loaded;
     } catch (e) {
       if (!isCurrentLoad()) return;
+      final latestBlock = await collectionFuture;
+      if (!isCurrentLoad()) return;
+      if (latestBlock != null) _latestCollectionBlock = latestBlock;
       if (_items.isEmpty) {
         _error = e.toString();
         _state = NoteLoadState.error;
@@ -87,36 +94,51 @@ class NoteProvider extends ChangeNotifier {
       return;
     }
     _activeTag = tag;
+    final token = ++_loadToken;
+    _currentCollectionBid = collectionBid;
+
+    bool isCurrentFilter() =>
+        token == _loadToken &&
+        _currentCollectionBid == collectionBid &&
+        _activeTag == tag;
 
     final service = _service;
 
     // Step 1: 立即用本地缓存筛选，瞬间展示
     final localBids = await service.getLocalBidsByTag(collectionBid, tag);
+    if (!isCurrentFilter()) return;
     _items = await service.getLocalItems(localBids);
+    if (!isCurrentFilter()) return;
     _state = NoteLoadState.loaded;
     _syncing = true;
     notifyListeners();
 
     // Step 2: 后台异步请求服务器，不阻塞当前帧
-    unawaited(_syncTagInBackground(service, collectionBid, tag));
+    unawaited(_syncTagInBackground(service, collectionBid, tag, token));
   }
 
   Future<void> _syncTagInBackground(
     NoteService service,
     String collectionBid,
     String tag,
+    int token,
   ) async {
+    bool isCurrentFilter() =>
+        token == _loadToken &&
+        _currentCollectionBid == collectionBid &&
+        _activeTag == tag;
+
     try {
       final freshBids = await service.syncCollectionByTag(collectionBid, tag);
       // 只有 tag 没变才更新
-      if (_activeTag == tag) {
+      if (isCurrentFilter()) {
         _items = await service.getLocalItems(freshBids);
         _state = NoteLoadState.loaded;
       }
     } catch (_) {
       // 后台失败不影响已展示的本地结果
     } finally {
-      if (_activeTag == tag) {
+      if (isCurrentFilter()) {
         _syncing = false;
         notifyListeners();
       }
@@ -135,9 +157,14 @@ class NoteProvider extends ChangeNotifier {
     );
 
     // 1. 立即加入内存列表并通知 UI
-    _items = [NoteListItemNote(note), ..._items];
-    _state = NoteLoadState.loaded;
-    notifyListeners();
+    if (_currentCollectionBid == collectionBid && _activeTag == null) {
+      _items = [
+        NoteListItemNote(note),
+        ..._items.where((item) => item.bid != note.bid),
+      ];
+      _state = NoteLoadState.loaded;
+      notifyListeners();
+    }
 
     // 2. 注意：这里我们不需要立即调用 loadItems(collectionBid)，
     // 因为这会发起网络同步并覆盖掉我们刚加进去的本地项。
@@ -187,7 +214,12 @@ class NoteProvider extends ChangeNotifier {
 
   Future<void> _updateItemsFromLocal() async {
     if (_currentCollectionBid != null) {
-      final bids = await _service.getLocalBids(_currentCollectionBid!);
+      final bids = _activeTag == null
+          ? await _service.getLocalBids(_currentCollectionBid!)
+          : await _service.getLocalBidsByTag(
+              _currentCollectionBid!,
+              _activeTag!,
+            );
       _items = await _service.getLocalItems(bids);
       notifyListeners();
     }
@@ -201,7 +233,7 @@ class NoteProvider extends ChangeNotifier {
   }
 
   Future<void> deleteNote(String bid) async {
-    await _service.deleteNote(bid);
+    await _service.deleteNote(bid, collectionBid: _currentCollectionBid);
     _items = _items.where((i) => i.bid != bid).toList();
     notifyListeners();
   }
@@ -210,6 +242,7 @@ class NoteProvider extends ChangeNotifier {
   Future<NoteModel> refreshNote(String bid) => _service.refreshNote(bid);
 
   void clear() {
+    _loadToken++;
     _items = [];
     _state = NoteLoadState.idle;
     _error = null;
