@@ -9,16 +9,21 @@ class NoteModel {
     required this.createdAt,
     required this.updatedAt,
     this.tags = const [],
+    this.isPinned = false,
   });
 
   factory NoteModel.fromBlock(BlockModel block) {
     final bid = block.maybeString('bid') ?? '';
-    final title = block.maybeString('name') ?? block.maybeString('title') ?? '无标题';
-    final content = block.maybeString('content') ?? block.maybeString('body') ?? '';
-    final createdAt = block.getDateTime('add_time') ??
+    final title =
+        block.maybeString('name') ?? block.maybeString('title') ?? '无标题';
+    final content =
+        block.maybeString('content') ?? block.maybeString('body') ?? '';
+    final createdAt =
+        block.getDateTime('add_time') ??
         block.getDateTime('created_at') ??
         DateTime.now();
-    final updatedAt = block.getDateTime('update_time') ??
+    final updatedAt =
+        block.getDateTime('update_time') ??
         block.getDateTime('updated_at') ??
         createdAt;
     final rawTags = block.data['tag'];
@@ -32,6 +37,7 @@ class NoteModel {
       createdAt: createdAt,
       updatedAt: updatedAt,
       tags: tags,
+      isPinned: block.data['is_pinned'] == true,
     );
   }
 
@@ -41,12 +47,14 @@ class NoteModel {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<String> tags;
+  final bool isPinned;
 
   NoteModel copyWith({
     String? title,
     String? content,
     List<String>? tags,
     DateTime? updatedAt,
+    bool? isPinned,
   }) {
     return NoteModel(
       bid: bid,
@@ -55,6 +63,7 @@ class NoteModel {
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       tags: tags ?? this.tags,
+      isPinned: isPinned ?? this.isPinned,
     );
   }
 

@@ -36,15 +36,15 @@ class NoteListItemNote extends NoteListItem {
   @override
   String get title => note.title;
 
-  NoteListItemNote copyWith({
-    String? title,
-    String? summary,
-  }) {
-    return NoteListItemNote(note.copyWith(
-      title: title,
-      content: summary,
-      updatedAt: DateTime.now(),
-    ));
+  NoteListItemNote copyWith({String? title, String? summary, bool? isPinned}) {
+    return NoteListItemNote(
+      note.copyWith(
+        title: title,
+        content: summary,
+        updatedAt: DateTime.now(),
+        isPinned: isPinned,
+      ),
+    );
   }
 }
 

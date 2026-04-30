@@ -232,6 +232,14 @@ class NoteProvider extends ChangeNotifier {
     await _service.updateNoteTags(bid: bid, tags: tags);
   }
 
+  Future<void> updateNotePinned({
+    required String bid,
+    required bool isPinned,
+  }) async {
+    await _service.updateNotePinned(bid: bid, isPinned: isPinned);
+    await _updateItemsFromLocal();
+  }
+
   Future<void> deleteNote(String bid) async {
     await _service.deleteNote(bid, collectionBid: _currentCollectionBid);
     _items = _items.where((i) => i.bid != bid).toList();

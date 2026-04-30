@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -357,41 +358,46 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
     );
   }
 
+  Future<void> _toggleNotePinned(NoteModel note) async {
+    final shouldPin = !note.isPinned;
+    if (_selectedNoteBid == note.bid) {
+      await _saveEditorLocal();
+    }
+    try {
+      await _noteProvider?.updateNotePinned(bid: note.bid, isPinned: shouldPin);
+      if (!mounted) return;
+      if (_selectedNoteBid == note.bid) {
+        setState(() {
+          _selectedNote = (_selectedNote ?? note).copyWith(isPinned: shouldPin);
+        });
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(shouldPin ? '已置顶' : '已取消置顶'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('置顶失败：$e')));
+    }
+  }
+
   Future<void> _moveNote(NoteModel note) async {
     final current = _selectedCollection;
     if (current == null) return;
-    final targets = context
-        .read<CollectionProvider>()
-        .collections
-        .where((c) => c.bid != current.bid)
-        .toList();
-    if (targets.isEmpty) {
+    if (context.read<CollectionProvider>().collections.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('没有可移动到的集合')));
       return;
     }
 
-    final target = await showDialog<NoteCollection>(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: const Text('移动到'),
-        children: [
-          for (final target in targets)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(dialogContext, target),
-              child: Row(
-                children: [
-                  const Icon(Icons.folder_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(target.title, overflow: TextOverflow.ellipsis),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
+    final target = await _pickMoveTargetCollection(
+      currentCollectionBid: current.bid,
+      disabledBids: {current.bid},
     );
     if (target == null || !mounted) return;
 
@@ -534,55 +540,46 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
     );
   }
 
-  Future<void> _moveCollection(NoteCollection collection) async {
-    final targets = context
-        .read<CollectionProvider>()
-        .collections
-        .where((c) => c.bid != collection.bid)
-        .toList();
-    if (targets.isEmpty) {
+  Future<void> _moveCollection(
+    NoteCollection collection, {
+    String? parentBid,
+  }) async {
+    if (context.read<CollectionProvider>().collections.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('没有可移动到的集合')));
       return;
     }
 
-    final target = await showDialog<NoteCollection>(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: const Text('移动到'),
-        children: [
-          for (final target in targets)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(dialogContext, target),
-              child: Row(
-                children: [
-                  const Icon(Icons.folder_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(target.title, overflow: TextOverflow.ellipsis),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
+    final target = await _pickMoveTargetCollection(
+      currentCollectionBid: parentBid,
+      disabledBids: {collection.bid},
+      disabledBranchBid: collection.bid,
     );
     if (target == null || !mounted) return;
 
     try {
-      await NoteService(context.read<ConnectionProvider>()).joinCollection(
-        targetBid: target.bid,
-        currentCollectionBid: collection.bid,
+      await NoteService(
+        context.read<ConnectionProvider>(),
+      ).moveItemToCollection(
+        bid: collection.bid,
+        fromCollectionBid: parentBid ?? '',
+        targetCollectionBid: target.bid,
       );
       if (!mounted) return;
-      await context.read<CollectionProvider>().removeCollection(collection.bid);
+      if (parentBid == null) {
+        await context.read<CollectionProvider>().removeCollection(
+          collection.bid,
+        );
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('已移动到「${target.title}」')));
       if (_selectedCollection?.bid == collection.bid) {
         await _selectCollection(target);
+      } else {
+        setState(() {});
       }
     } catch (e) {
       if (!mounted) return;
@@ -590,6 +587,23 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('移动失败：$e')));
     }
+  }
+
+  Future<NoteCollection?> _pickMoveTargetCollection({
+    String? currentCollectionBid,
+    required Set<String> disabledBids,
+    String? disabledBranchBid,
+  }) {
+    final roots = context.read<CollectionProvider>().collections;
+    return showDialog<NoteCollection>(
+      context: context,
+      builder: (_) => _MacMoveTargetDialog(
+        roots: roots,
+        currentCollectionBid: currentCollectionBid,
+        disabledBids: disabledBids,
+        disabledBranchBid: disabledBranchBid,
+      ),
+    );
   }
 
   Future<void> _removeCollection(NoteCollection collection) async {
@@ -683,7 +697,8 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
                     _showJoinCollectionDialog(
                       currentCollectionBid: collection.bid,
                     ),
-                onMoveCollection: _moveCollection,
+                onMoveCollection: (collection, parentBid) =>
+                    _moveCollection(collection, parentBid: parentBid),
                 onRemoveCollection: _removeCollection,
               ),
             ),
@@ -701,6 +716,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
                 onSelectNote: _selectNote,
                 onCreateNote: _createNote,
                 onCopyNoteBid: _copyNoteBid,
+                onToggleNotePinned: _toggleNotePinned,
                 onMoveNote: _moveNote,
                 onDeleteNote: _deleteNote,
                 onSetup: () => Navigator.push(
@@ -724,6 +740,253 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MacMoveTargetDialog extends StatefulWidget {
+  const _MacMoveTargetDialog({
+    required this.roots,
+    required this.disabledBids,
+    this.currentCollectionBid,
+    this.disabledBranchBid,
+  });
+
+  final List<NoteCollection> roots;
+  final String? currentCollectionBid;
+  final Set<String> disabledBids;
+  final String? disabledBranchBid;
+
+  @override
+  State<_MacMoveTargetDialog> createState() => _MacMoveTargetDialogState();
+}
+
+class _MacMoveTargetDialogState extends State<_MacMoveTargetDialog> {
+  final Map<String, bool> _expanded = {};
+  final Map<String, List<NoteCollection>> _children = {};
+
+  Future<List<NoteCollection>> _loadChildren(String bid) async {
+    final cached = _children[bid];
+    if (cached != null) return cached;
+
+    final bids = await NoteLocalStore.instance.getBids(bid);
+    if (bids.isEmpty) {
+      _children[bid] = const [];
+      return const [];
+    }
+
+    final blocks = await NoteLocalStore.instance.getBlocks(bids);
+    final children = <NoteCollection>[];
+    for (final childBid in bids) {
+      final block = blocks[childBid];
+      if (block == null) continue;
+      final item = NoteListItem.fromBlock(block);
+      if (item is NoteListItemCollection) {
+        children.add(item.collection);
+      }
+    }
+    _children[bid] = children;
+    return children;
+  }
+
+  Future<bool> _hasChildren(String bid) async {
+    final children = await _loadChildren(bid);
+    return children.isNotEmpty;
+  }
+
+  Future<void> _toggle(String bid) async {
+    final children = await _loadChildren(bid);
+    if (!mounted) return;
+    setState(() {
+      _children[bid] = children;
+      _expanded[bid] = _expanded[bid] != true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return AlertDialog(
+      title: const Text('移动到'),
+      contentPadding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
+      content: SizedBox(
+        width: 380,
+        height: 420,
+        child: ListView.builder(
+          itemCount: widget.roots.length,
+          itemBuilder: (context, index) => _MacMoveTargetNode(
+            collection: widget.roots[index],
+            depth: 0,
+            currentCollectionBid: widget.currentCollectionBid,
+            disabledBids: widget.disabledBids,
+            disabledBranchBid: widget.disabledBranchBid,
+            disabledByAncestor: false,
+            expanded: _expanded,
+            children: _children,
+            onToggle: _toggle,
+            hasChildren: _hasChildren,
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+      ],
+      surfaceTintColor: cs.surfaceTint,
+    );
+  }
+}
+
+class _MacMoveTargetNode extends StatelessWidget {
+  const _MacMoveTargetNode({
+    required this.collection,
+    required this.depth,
+    required this.disabledBids,
+    required this.disabledByAncestor,
+    required this.expanded,
+    required this.children,
+    required this.onToggle,
+    required this.hasChildren,
+    this.currentCollectionBid,
+    this.disabledBranchBid,
+  });
+
+  final NoteCollection collection;
+  final int depth;
+  final String? currentCollectionBid;
+  final Set<String> disabledBids;
+  final String? disabledBranchBid;
+  final bool disabledByAncestor;
+  final Map<String, bool> expanded;
+  final Map<String, List<NoteCollection>> children;
+  final Future<void> Function(String bid) onToggle;
+  final Future<bool> Function(String bid) hasChildren;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final bid = collection.bid;
+    final isCurrent = bid == currentCollectionBid;
+    final isDisabled = disabledBids.contains(bid) || disabledByAncestor;
+    final canPick = !isCurrent && !isDisabled;
+    final isExpanded = expanded[bid] == true;
+    final kids = children[bid] ?? const <NoteCollection>[];
+    final childDisabledByAncestor =
+        disabledByAncestor || bid == disabledBranchBid;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: canPick ? () => Navigator.pop(context, collection) : null,
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 16.0 + depth * 20.0,
+              right: 8,
+              top: 9,
+              bottom: 9,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: canPick
+                        ? const Color(0xFFFFCC00)
+                        : cs.onSurfaceVariant.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Icon(
+                    Icons.folder_rounded,
+                    size: 17,
+                    color: canPick ? Colors.white : cs.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        collection.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: canPick ? cs.onSurface : cs.onSurfaceVariant,
+                        ),
+                      ),
+                      if (isCurrent || isDisabled)
+                        Text(
+                          isCurrent
+                              ? '当前集合'
+                              : disabledByAncestor
+                              ? '子级集合'
+                              : '正在移动',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                FutureBuilder<bool>(
+                  future: hasChildren(bid),
+                  builder: (context, snapshot) {
+                    if (snapshot.data != true) {
+                      return const SizedBox(width: 36, height: 36);
+                    }
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () => onToggle(bid),
+                      child: SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: Center(
+                          child: AnimatedRotation(
+                            turns: isExpanded ? 0.25 : 0,
+                            duration: const Duration(milliseconds: 180),
+                            child: Icon(
+                              Icons.chevron_right_rounded,
+                              size: 20,
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (isExpanded)
+          for (final child in kids)
+            _MacMoveTargetNode(
+              collection: child,
+              depth: depth + 1,
+              currentCollectionBid: currentCollectionBid,
+              disabledBids: disabledBids,
+              disabledBranchBid: disabledBranchBid,
+              disabledByAncestor: childDisabledByAncestor,
+              expanded: expanded,
+              children: children,
+              onToggle: onToggle,
+              hasChildren: hasChildren,
+            ),
+        if (depth == 0)
+          Divider(
+            height: 1,
+            indent: 16,
+            color: cs.outlineVariant.withValues(alpha: 0.3),
+          ),
+      ],
     );
   }
 }
@@ -752,7 +1015,8 @@ class _MacSidebar extends StatefulWidget {
   final ValueChanged<NoteCollection> onCopyCollectionBid;
   final ValueChanged<NoteCollection> onCreateChildCollection;
   final ValueChanged<NoteCollection> onJoinCurrentCollection;
-  final ValueChanged<NoteCollection> onMoveCollection;
+  final void Function(NoteCollection collection, String? parentBid)
+  onMoveCollection;
   final ValueChanged<NoteCollection> onRemoveCollection;
 
   @override
@@ -856,7 +1120,7 @@ class _MacSidebarState extends State<_MacSidebar> {
               onCopyBid: () => widget.onCopyCollectionBid(collection),
               onCreateChild: () => widget.onCreateChildCollection(collection),
               onJoinCurrent: () => widget.onJoinCurrentCollection(collection),
-              onMove: () => widget.onMoveCollection(collection),
+              onMove: () => widget.onMoveCollection(collection, parentBid),
               onRemove: () => depth == 0
                   ? widget.onRemoveCollection(collection)
                   : _deleteChildCollection(collection, parentBid!),
@@ -1156,6 +1420,7 @@ class _MacArticleList extends StatelessWidget {
     required this.onSelectNote,
     required this.onCreateNote,
     required this.onCopyNoteBid,
+    required this.onToggleNotePinned,
     required this.onMoveNote,
     required this.onDeleteNote,
     required this.onSetup,
@@ -1171,6 +1436,7 @@ class _MacArticleList extends StatelessWidget {
   final ValueChanged<NoteModel> onSelectNote;
   final VoidCallback onCreateNote;
   final ValueChanged<NoteModel> onCopyNoteBid;
+  final ValueChanged<NoteModel> onToggleNotePinned;
   final ValueChanged<NoteModel> onMoveNote;
   final ValueChanged<NoteModel> onDeleteNote;
   final VoidCallback onSetup;
@@ -1227,6 +1493,7 @@ class _MacArticleList extends StatelessWidget {
                   children: [
                     for (var i = 0; i < notes.length; i++)
                       _NoteListTile(
+                        key: ValueKey(notes[i].note.bid),
                         note: notes[i].note,
                         selected: notes[i].note.bid == selectedBid,
                         hideBottomDivider:
@@ -1236,6 +1503,7 @@ class _MacArticleList extends StatelessWidget {
                         collectionTitle: collection?.title ?? '',
                         onTap: () => onSelectNote(notes[i].note),
                         onCopyBid: () => onCopyNoteBid(notes[i].note),
+                        onTogglePinned: () => onToggleNotePinned(notes[i].note),
                         onMove: () => onMoveNote(notes[i].note),
                         onDelete: () => onDeleteNote(notes[i].note),
                       ),
@@ -1333,14 +1601,16 @@ class _ArticleListHeader extends StatelessWidget {
   }
 }
 
-class _NoteListTile extends StatelessWidget {
+class _NoteListTile extends StatefulWidget {
   const _NoteListTile({
+    super.key,
     required this.note,
     required this.selected,
     required this.hideBottomDivider,
     required this.collectionTitle,
     required this.onTap,
     required this.onCopyBid,
+    required this.onTogglePinned,
     required this.onMove,
     required this.onDelete,
   });
@@ -1351,101 +1621,244 @@ class _NoteListTile extends StatelessWidget {
   final String collectionTitle;
   final VoidCallback onTap;
   final VoidCallback onCopyBid;
+  final VoidCallback onTogglePinned;
   final VoidCallback onMove;
   final VoidCallback onDelete;
 
   @override
+  State<_NoteListTile> createState() => _NoteListTileState();
+}
+
+class _NoteListTileState extends State<_NoteListTile> {
+  static const double _actionWidth = 76;
+  static const double _openThreshold = 36;
+  static const Duration _slideDuration = Duration(milliseconds: 180);
+
+  double _offset = 0;
+  bool _trackingPointer = false;
+  Timer? _scrollSettleTimer;
+
+  @override
+  void didUpdateWidget(covariant _NoteListTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.note.bid != widget.note.bid) {
+      _offset = 0;
+      _trackingPointer = false;
+      _scrollSettleTimer?.cancel();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollSettleTimer?.cancel();
+    super.dispose();
+  }
+
+  bool get _isOpen => _offset.abs() > 0.5;
+
+  double _clampOffset(double value) =>
+      value.clamp(-_actionWidth, _actionWidth).toDouble();
+
+  void _startTracking() {
+    _scrollSettleTimer?.cancel();
+    if (!_trackingPointer) {
+      setState(() => _trackingPointer = true);
+    }
+  }
+
+  void _updateOffset(double delta) {
+    setState(() => _offset = _clampOffset(_offset + delta));
+  }
+
+  void _settle({double velocity = 0}) {
+    final target = switch (velocity) {
+      > 500 => _actionWidth,
+      < -500 => -_actionWidth,
+      _ when _offset > _openThreshold => _actionWidth,
+      _ when _offset < -_openThreshold => -_actionWidth,
+      _ => 0.0,
+    };
+    setState(() {
+      _trackingPointer = false;
+      _offset = target;
+    });
+  }
+
+  void _close() {
+    if (!_isOpen) return;
+    setState(() {
+      _trackingPointer = false;
+      _offset = 0;
+    });
+  }
+
+  void _handlePointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    final dx = event.scrollDelta.dx;
+    if (dx.abs() < 0.5 || dx.abs() <= event.scrollDelta.dy.abs()) return;
+
+    _startTracking();
+    _updateOffset(-dx);
+    _scrollSettleTimer?.cancel();
+    _scrollSettleTimer = Timer(const Duration(milliseconds: 140), _settle);
+  }
+
+  void _runPinAction() {
+    _close();
+    widget.onTogglePinned();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).colorScheme.brightness == Brightness.dark;
-    final primaryText = selected
+    final primaryText = widget.selected
         ? _MacPalette.selectedText(isDark)
         : _MacPalette.primaryText(isDark);
-    final secondaryText = selected
+    final secondaryText = widget.selected
         ? _MacPalette.selectedSecondaryText(isDark)
         : _MacPalette.secondaryText(isDark);
-    final tertiaryText = selected
+    final tertiaryText = widget.selected
         ? _MacPalette.selectedSecondaryText(isDark)
         : _MacPalette.tertiaryText(isDark);
 
-    return Material(
-      color: selected ? _MacPalette.noteSelection(isDark) : Colors.transparent,
+    final tile = Material(
+      color: widget.selected
+          ? _MacPalette.noteSelection(isDark)
+          : Colors.transparent,
       borderRadius: BorderRadius.circular(9),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onSecondaryTapDown: (details) =>
-            _showContextMenu(context, details.globalPosition),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(9),
-          hoverColor: selected
-              ? Colors.transparent
-              : _MacPalette.noteHover(isDark),
-          highlightColor: Colors.transparent,
-          splashColor: Colors.transparent,
-          focusColor: Colors.transparent,
-          overlayColor: WidgetStateProperty.all(Colors.transparent),
-          onTap: onTap,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 66),
-            padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
-            decoration: hideBottomDivider
-                ? null
-                : BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: _MacPalette.divider(isDark)),
-                    ),
-                  ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  note.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: primaryText,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(9),
+        hoverColor: widget.selected
+            ? Colors.transparent
+            : _MacPalette.noteHover(isDark),
+        highlightColor: Colors.transparent,
+        splashColor: Colors.transparent,
+        focusColor: Colors.transparent,
+        overlayColor: WidgetStateProperty.all(Colors.transparent),
+        onTap: () {
+          if (_isOpen) {
+            _close();
+            return;
+          }
+          widget.onTap();
+        },
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 66),
+          padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+          decoration: widget.hideBottomDivider
+              ? null
+              : BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: _MacPalette.divider(isDark)),
                   ),
                 ),
-                const SizedBox(height: 3),
-                Row(
-                  children: [
-                    Text(
-                      _relativeDate(note.updatedAt),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  if (widget.note.isPinned) ...[
+                    Icon(Icons.push_pin_rounded, size: 12, color: primaryText),
+                    const SizedBox(width: 4),
+                  ],
+                  Expanded(
+                    child: Text(
+                      widget.note.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
                         color: primaryText,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        note.preview.isEmpty ? '无更多文本' : note.preview,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: secondaryText),
-                      ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Row(
+                children: [
+                  Text(
+                    _relativeDate(widget.note.updatedAt),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      color: primaryText,
                     ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      widget.note.preview.isEmpty
+                          ? '无更多文本'
+                          : widget.note.preview,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: secondaryText),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.folder_outlined, size: 14, color: tertiaryText),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      widget.collectionTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11.5, color: secondaryText),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return Listener(
+      onPointerSignal: _handlePointerSignal,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: (_) => _startTracking(),
+        onHorizontalDragUpdate: (details) =>
+            _updateOffset(details.primaryDelta ?? 0),
+        onHorizontalDragEnd: (details) =>
+            _settle(velocity: details.primaryVelocity ?? 0),
+        onSecondaryTapDown: (details) {
+          _close();
+          _showContextMenu(context, details.globalPosition);
+        },
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(9),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Row(
                   children: [
-                    Icon(Icons.folder_outlined, size: 14, color: tertiaryText),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        collectionTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11.5, color: secondaryText),
-                      ),
+                    _NotePinSwipeAction(
+                      isPinned: widget.note.isPinned,
+                      onPressed: _runPinAction,
+                    ),
+                    const Spacer(),
+                    _NotePinSwipeAction(
+                      isPinned: widget.note.isPinned,
+                      onPressed: _runPinAction,
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              AnimatedContainer(
+                duration: _trackingPointer ? Duration.zero : _slideDuration,
+                curve: Curves.easeOutCubic,
+                transform: Matrix4.translationValues(_offset, 0, 0),
+                child: tile,
+              ),
+            ],
           ),
         ),
       ),
@@ -1462,22 +1875,78 @@ class _NoteListTile extends StatelessWidget {
         overlay.size.width - position.dx,
         overlay.size.height - position.dy,
       ),
-      items: const [
-        PopupMenuItem(value: 'copy', child: Text('复制 BID')),
-        PopupMenuItem(value: 'move', child: Text('移动')),
-        PopupMenuDivider(),
-        PopupMenuItem(value: 'delete', child: Text('删除')),
+      items: [
+        PopupMenuItem(
+          value: 'pin',
+          child: Text(widget.note.isPinned ? '取消置顶' : '置顶'),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'copy', child: Text('复制 BID')),
+        const PopupMenuItem(value: 'move', child: Text('移动')),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'delete', child: Text('删除')),
       ],
     );
 
     switch (value) {
+      case 'pin':
+        _runPinAction();
       case 'copy':
-        onCopyBid();
+        widget.onCopyBid();
       case 'move':
-        onMove();
+        widget.onMove();
       case 'delete':
-        onDelete();
+        widget.onDelete();
     }
+  }
+}
+
+class _NotePinSwipeAction extends StatelessWidget {
+  const _NotePinSwipeAction({required this.isPinned, required this.onPressed});
+
+  final bool isPinned;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).colorScheme.brightness == Brightness.dark;
+    final background = isPinned
+        ? _MacPalette.selection(isDark)
+        : _MacPalette.noteSelection(isDark);
+    final foreground = isPinned
+        ? _MacPalette.primaryText(isDark)
+        : _MacPalette.selectedText(isDark);
+
+    return SizedBox(
+      width: _NoteListTileState._actionWidth,
+      child: Material(
+        color: background,
+        child: InkWell(
+          onTap: onPressed,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                size: 18,
+                color: foreground,
+              ),
+              const SizedBox(height: 3),
+              Text(
+                isPinned ? '取消置顶' : '置顶',
+                maxLines: 1,
+                overflow: TextOverflow.clip,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: foreground,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
