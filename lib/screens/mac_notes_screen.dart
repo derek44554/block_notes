@@ -361,9 +361,9 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
         .where((c) => c.bid != current.bid)
         .toList();
     if (targets.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有可移动到的集合')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('没有可移动到的集合')));
       return;
     }
 
@@ -391,15 +391,17 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
     if (target == null || !mounted) return;
 
     try {
-      await NoteService(context.read<ConnectionProvider>()).moveItemToCollection(
+      await NoteService(
+        context.read<ConnectionProvider>(),
+      ).moveItemToCollection(
         bid: note.bid,
         fromCollectionBid: current.bid,
         targetCollectionBid: target.bid,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已移动到「${target.title}」')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('已移动到「${target.title}」')));
       await _noteProvider?.loadItems(current.bid);
       if (_selectedNoteBid == note.bid) {
         setState(() {
@@ -412,23 +414,23 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('移动失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('移动失败：$e')));
     }
   }
 
   Future<void> _showCreateCollectionDialog({String? parentBid}) async {
-    final ctrl = TextEditingController();
+    var input = '';
     final name = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('新建集合'),
         content: TextField(
-          controller: ctrl,
           autofocus: true,
           decoration: const InputDecoration(labelText: '集合名称'),
-          onSubmitted: (_) => Navigator.pop(dialogContext, ctrl.text.trim()),
+          onChanged: (value) => input = value,
+          onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
         ),
         actions: [
           TextButton(
@@ -436,7 +438,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, ctrl.text.trim()),
+            onPressed: () => Navigator.pop(dialogContext, input.trim()),
             child: const Text('创建'),
           ),
         ],
@@ -465,18 +467,18 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
   }
 
   Future<void> _showJoinCollectionDialog({String? currentCollectionBid}) async {
-    final ctrl = TextEditingController();
+    var input = '';
     final bid = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('加入集合'),
         content: TextField(
-          controller: ctrl,
           autofocus: true,
           decoration: InputDecoration(
             labelText: currentCollectionBid == null ? '集合 BID' : '目标集合 BID',
           ),
-          onSubmitted: (_) => Navigator.pop(dialogContext, ctrl.text.trim()),
+          onChanged: (value) => input = value,
+          onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
         ),
         actions: [
           TextButton(
@@ -484,7 +486,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, ctrl.text.trim()),
+            onPressed: () => Navigator.pop(dialogContext, input.trim()),
             child: const Text('加入'),
           ),
         ],
@@ -506,9 +508,9 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
           currentCollectionBid: currentCollectionBid,
         );
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已加入集合')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('已加入集合')));
         await _noteProvider?.loadItems(currentCollectionBid);
       }
     } catch (e) {
@@ -534,9 +536,9 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
         .where((c) => c.bid != collection.bid)
         .toList();
     if (targets.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有可移动到的集合')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('没有可移动到的集合')));
       return;
     }
 
@@ -571,17 +573,17 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
       if (!mounted) return;
       await context.read<CollectionProvider>().removeCollection(collection.bid);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已移动到「${target.title}」')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('已移动到「${target.title}」')));
       if (_selectedCollection?.bid == collection.bid) {
         await _selectCollection(target);
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('移动失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('移动失败：$e')));
     }
   }
 
@@ -676,7 +678,9 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
                 onCreateChildCollection: (collection) =>
                     _showCreateCollectionDialog(parentBid: collection.bid),
                 onJoinCurrentCollection: (collection) =>
-                    _showJoinCollectionDialog(currentCollectionBid: collection.bid),
+                    _showJoinCollectionDialog(
+                      currentCollectionBid: collection.bid,
+                    ),
                 onMoveCollection: _moveCollection,
                 onRemoveCollection: _removeCollection,
               ),
@@ -783,37 +787,24 @@ class _MacSidebarState extends State<_MacSidebar> {
       color: _MacPalette.sidebar(isDark),
       child: Column(
         children: [
-          _SidebarToolbar(
-            onOpenSettings: widget.onOpenSettings,
-          ),
+          _SidebarToolbar(onOpenSettings: widget.onOpenSettings),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
               children: [
                 _SidebarSectionLabel(
-	                  label: '集合',
-	                  actions: [
-	                    _MacIconButton(
-	                      icon: Icons.create_new_folder_outlined,
-	                      tooltip: '新建集合',
-	                      onPressed: widget.onCreateCollection,
-	                    ),
-	                    _MacIconButton(
-	                      icon: Icons.folder_shared_outlined,
-	                      tooltip: '加入集合',
-	                      onPressed: widget.onJoinCollection,
-	                    ),
-	                  ],
-	                ),
-	                if (defaults.isNotEmpty)
-	                  for (final collection in defaults)
-	                    _buildCollectionNode(collection, 0, null),
-	                if (regular.isNotEmpty) ...[
-	                  const SizedBox(height: 6),
-	                  for (final collection in regular)
-	                    _buildCollectionNode(collection, 0, null),
-	                ],
-	                if (widget.collections.isEmpty)
+                  label: '集合',
+                  onContextMenu: _showRootContextMenu,
+                ),
+                if (defaults.isNotEmpty)
+                  for (final collection in defaults)
+                    _buildCollectionNode(collection, 0, null),
+                if (regular.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  for (final collection in regular)
+                    _buildCollectionNode(collection, 0, null),
+                ],
+                if (widget.collections.isEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(10, 18, 10, 0),
                     child: Text(
@@ -856,8 +847,8 @@ class _MacSidebarState extends State<_MacSidebar> {
               isTopLevel: depth == 0,
               onToggle: hasChildren
                   ? () => setState(() {
-                        _expanded[collection.bid] = !expanded;
-                      })
+                      _expanded[collection.bid] = !expanded;
+                    })
                   : null,
               onTap: () => widget.onSelect(collection),
               onCopyBid: () => widget.onCopyCollectionBid(collection),
@@ -882,7 +873,9 @@ class _MacSidebarState extends State<_MacSidebar> {
     String parentBid,
   ) async {
     try {
-      await NoteService(context.read<ConnectionProvider>()).deleteNote(collection.bid);
+      await NoteService(
+        context.read<ConnectionProvider>(),
+      ).deleteNote(collection.bid);
       final bids = await NoteLocalStore.instance.getBids(parentBid);
       await NoteLocalStore.instance.saveBids(
         parentBid,
@@ -895,23 +888,47 @@ class _MacSidebarState extends State<_MacSidebar> {
           widget.onSelect(NoteCollection.fromBlock(parentBlock));
         }
       }
+      if (!mounted) return;
       setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('集合已删除')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('集合已删除')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('删除失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('删除失败：$e')));
+    }
+  }
+
+  Future<void> _showRootContextMenu(Offset position) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final value = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        overlay.size.width - position.dx,
+        overlay.size.height - position.dy,
+      ),
+      items: const [
+        PopupMenuItem(value: 'create', child: Text('新建集合')),
+        PopupMenuItem(value: 'join', child: Text('加入集合')),
+      ],
+    );
+    if (!mounted) return;
+
+    switch (value) {
+      case 'create':
+        widget.onCreateCollection();
+      case 'join':
+        widget.onJoinCollection();
     }
   }
 }
 
 class _SidebarToolbar extends StatelessWidget {
-  const _SidebarToolbar({
-    required this.onOpenSettings,
-  });
+  const _SidebarToolbar({required this.onOpenSettings});
 
   final VoidCallback onOpenSettings;
 
@@ -936,30 +953,35 @@ class _SidebarToolbar extends StatelessWidget {
 }
 
 class _SidebarSectionLabel extends StatelessWidget {
-  const _SidebarSectionLabel({required this.label, this.actions = const []});
+  const _SidebarSectionLabel({required this.label, this.onContextMenu});
 
   final String label;
-  final List<Widget> actions;
+  final ValueChanged<Offset>? onContextMenu;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).colorScheme.brightness == Brightness.dark;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 4, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: _MacPalette.secondaryText(isDark),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onSecondaryTapDown: onContextMenu == null
+          ? null
+          : (details) => onContextMenu!(details.globalPosition),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 0, 4, 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: _MacPalette.secondaryText(isDark),
+                ),
               ),
             ),
-          ),
-          ...actions,
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1010,10 +1032,8 @@ class _SidebarCollectionTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(9),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onSecondaryTapDown: (details) => _showContextMenu(
-            context,
-            details.globalPosition,
-          ),
+          onSecondaryTapDown: (details) =>
+              _showContextMenu(context, details.globalPosition),
           child: InkWell(
             borderRadius: BorderRadius.circular(9),
             onTap: onTap,
@@ -1050,7 +1070,9 @@ class _SidebarCollectionTile extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12.5,
-                        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                         color: textColor,
                       ),
                     ),
@@ -1205,7 +1227,8 @@ class _MacArticleList extends StatelessWidget {
                       _NoteListTile(
                         note: notes[i].note,
                         selected: notes[i].note.bid == selectedBid,
-                        hideBottomDivider: notes[i].note.bid == selectedBid ||
+                        hideBottomDivider:
+                            notes[i].note.bid == selectedBid ||
                             (i + 1 < notes.length &&
                                 notes[i + 1].note.bid == selectedBid),
                         collectionTitle: collection?.title ?? '',
@@ -1223,7 +1246,6 @@ class _MacArticleList extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _ArticleListHeader extends StatelessWidget {
@@ -1420,90 +1442,80 @@ class _NoteListTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(9),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onSecondaryTapDown: (details) => _showContextMenu(
-          context,
-          details.globalPosition,
-        ),
+        onSecondaryTapDown: (details) =>
+            _showContextMenu(context, details.globalPosition),
         child: InkWell(
           borderRadius: BorderRadius.circular(9),
-          hoverColor: selected ? Colors.transparent : _MacPalette.noteHover(isDark),
+          hoverColor: selected
+              ? Colors.transparent
+              : _MacPalette.noteHover(isDark),
           highlightColor: Colors.transparent,
           splashColor: Colors.transparent,
           focusColor: Colors.transparent,
           overlayColor: WidgetStateProperty.all(Colors.transparent),
           onTap: onTap,
           child: Container(
-          constraints: const BoxConstraints(minHeight: 66),
-          padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
-          decoration: hideBottomDivider
-              ? null
-              : BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: _MacPalette.divider(isDark)),
+            constraints: const BoxConstraints(minHeight: 66),
+            padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+            decoration: hideBottomDivider
+                ? null
+                : BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: _MacPalette.divider(isDark)),
+                    ),
                   ),
-                ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                note.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  note.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w600,
-                  color: primaryText,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Row(
-                children: [
-                  Text(
-                    _relativeDate(note.updatedAt),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                      color: primaryText,
-                    ),
+                    color: primaryText,
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      note.preview.isEmpty ? '无更多文本' : note.preview,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Text(
+                      _relativeDate(note.updatedAt),
                       style: TextStyle(
                         fontSize: 12,
-                        color: secondaryText,
+                        fontWeight: FontWeight.w400,
+                        color: primaryText,
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(
-                    Icons.folder_outlined,
-                    size: 14,
-                    color: tertiaryText,
-                  ),
-                  const SizedBox(width: 5),
-                  Expanded(
-                    child: Text(
-                      collectionTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: secondaryText,
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        note.preview.isEmpty ? '无更多文本' : note.preview,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: secondaryText),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.folder_outlined, size: 14, color: tertiaryText),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        collectionTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11.5, color: secondaryText),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1564,10 +1576,7 @@ class _MacEditorPane extends StatelessWidget {
     return Container(
       color: _MacPalette.editor(isDark),
       child: selectedNote == null
-          ? _PaneState(
-              icon: Icons.sticky_note_2_outlined,
-              title: '选择一篇备忘录',
-            )
+          ? _PaneState(icon: Icons.sticky_note_2_outlined, title: '选择一篇备忘录')
           : Stack(
               children: [
                 Positioned.fill(
@@ -1588,58 +1597,14 @@ class _MacEditorPane extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                              TextField(
-                                controller: titleController,
-                                focusNode: titleFocus,
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w700,
-                            color: _MacPalette.primaryText(isDark),
-                            height: 1.18,
-                          ),
-                          cursorWidth: 1.2,
-                                decoration: const InputDecoration(
-                                  border: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  focusedBorder: InputBorder.none,
-                                  filled: false,
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                                textInputAction: TextInputAction.next,
-                                onSubmitted: (_) => contentFocus.requestFocus(),
-                              ),
-                              if (tags.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  children: tags
-                                      .map((tag) => _TagChip(label: tag))
-                                      .toList(),
-                                ),
-                              ],
-                              const SizedBox(height: 12),
-                              Focus(
-                                onKeyEvent: (node, event) {
-                                  if (event is KeyDownEvent &&
-                                      event.logicalKey ==
-                                          LogicalKeyboardKey.backspace &&
-                                      _isAtContentStart()) {
-                                    _mergeContentToTitle();
-                                    return KeyEventResult.handled;
-                                  }
-                                  return KeyEventResult.ignored;
-                                },
-                                child: TextField(
-                                  controller: contentController,
-                                  focusNode: contentFocus,
-                                  minLines: null,
-                                  maxLines: null,
+                                TextField(
+                                  controller: titleController,
+                                  focusNode: titleFocus,
                                   style: TextStyle(
-                                    fontSize: 14.5,
-                                    height: 1.55,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w700,
                                     color: _MacPalette.primaryText(isDark),
+                                    height: 1.18,
                                   ),
                                   cursorWidth: 1.2,
                                   decoration: const InputDecoration(
@@ -1650,8 +1615,53 @@ class _MacEditorPane extends StatelessWidget {
                                     isDense: true,
                                     contentPadding: EdgeInsets.zero,
                                   ),
+                                  textInputAction: TextInputAction.next,
+                                  onSubmitted: (_) =>
+                                      contentFocus.requestFocus(),
                                 ),
-                              ),
+                                if (tags.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    children: tags
+                                        .map((tag) => _TagChip(label: tag))
+                                        .toList(),
+                                  ),
+                                ],
+                                const SizedBox(height: 12),
+                                Focus(
+                                  onKeyEvent: (node, event) {
+                                    if (event is KeyDownEvent &&
+                                        event.logicalKey ==
+                                            LogicalKeyboardKey.backspace &&
+                                        _isAtContentStart()) {
+                                      _mergeContentToTitle();
+                                      return KeyEventResult.handled;
+                                    }
+                                    return KeyEventResult.ignored;
+                                  },
+                                  child: TextField(
+                                    controller: contentController,
+                                    focusNode: contentFocus,
+                                    minLines: null,
+                                    maxLines: null,
+                                    style: TextStyle(
+                                      fontSize: 14.5,
+                                      height: 1.55,
+                                      color: _MacPalette.primaryText(isDark),
+                                    ),
+                                    cursorWidth: 1.2,
+                                    decoration: const InputDecoration(
+                                      border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      filled: false,
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -1674,7 +1684,7 @@ class _MacEditorPane extends StatelessWidget {
                     ),
                   ),
               ],
-      ),
+            ),
     );
   }
 
@@ -1719,7 +1729,6 @@ class _TagChip extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _PaneState extends StatelessWidget {
