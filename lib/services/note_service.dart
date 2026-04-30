@@ -12,6 +12,10 @@ const _collectionModelId = '1635e536a5a331a283f9da56b7b51774';
 const _batchSize = 50;
 const _maxParallelBlockFetches = 3;
 
+String _blockTimestampNow() => DateTime.now().toIso8601String();
+String _blockTimestamp(DateTime? time) =>
+    (time ?? DateTime.now()).toIso8601String();
+
 class NoteService {
   NoteService(this._connectionProvider);
 
@@ -63,6 +67,7 @@ class NoteService {
   }) async {
     final nodeBid = _nodeBid;
     final bid = generateBidV2(nodeBid);
+    final now = _blockTimestampNow();
     final data = <String, dynamic>{
       'bid': bid,
       'name': name,
@@ -71,6 +76,8 @@ class NoteService {
       'permission_level': 0,
       'tag': <String>[],
       'link': parentBid != null ? [parentBid] : <String>[],
+      'add_time': now,
+      'update_time': now,
     };
     await _api.saveBlock(data: data, receiverBid: nodeBid);
     final block = BlockModel(data: data);
@@ -102,7 +109,9 @@ class NoteService {
     links.add(currentCollectionBid);
     updatedData['link'] = links;
     updatedData['bid'] = targetBid;
+    updatedData['update_time'] = _blockTimestampNow();
     await _api.saveBlock(data: updatedData);
+    await _store.saveBlock(targetBid, BlockModel(data: updatedData));
     await _store.addBidToCollection(targetBid, currentCollectionBid);
   }
 
@@ -190,25 +199,31 @@ class NoteService {
   Future<List<String>> getLocalBids(String collectionBid) =>
       _store.getBids(collectionBid);
 
-  /// 从本地读取 BID 列表对应的列表项（文档或子集合），集合在前，置顶备忘录优先。
+  /// 从本地读取 BID 列表对应的列表项（文档或子集合），集合在前，备忘录按更新时间倒序。
   Future<List<NoteListItem>> getLocalItems(List<String> bids) async {
     final blocks = await _store.getBlocks(bids);
-    final collections = <NoteListItem>[];
-    final pinnedNotes = <NoteListItem>[];
-    final notes = <NoteListItem>[];
+    final items = <NoteListItem>[];
+    final originalIndexes = <String, int>{
+      for (var i = 0; i < bids.length; i++) bids[i]: i,
+    };
     for (final bid in bids) {
       final block = blocks[bid];
       if (block == null) continue;
-      final item = NoteListItem.fromBlock(block);
-      if (item is NoteListItemCollection) {
-        collections.add(item);
-      } else if (item is NoteListItemNote && item.note.isPinned) {
-        pinnedNotes.add(item);
-      } else {
-        notes.add(item);
-      }
+      items.add(NoteListItem.fromBlock(block));
     }
-    return [...collections, ...pinnedNotes, ...notes];
+    return sortNoteListItems(items, originalIndexes: originalIndexes);
+  }
+
+  DateTime? _blockChangedAt(BlockModel block) =>
+      block.getDateTime('update_time') ??
+      block.getDateTime('updated_at') ??
+      block.getDateTime('add_time') ??
+      block.getDateTime('created_at');
+
+  bool _blockIsNewerThan(BlockModel? block, DateTime? time) {
+    if (block == null || time == null) return false;
+    final localTime = _blockChangedAt(block);
+    return localTime != null && localTime.isAfter(time);
   }
 
   Future<void> _fetchMissingBlocks(List<String> missing) async {
@@ -328,10 +343,10 @@ class NoteService {
 
   /// 拉取单个 block 最新数据，更新本地缓存，返回最新 NoteModel
   Future<NoteModel> refreshNote(String bid) async {
+    final localBlock = await _store.getBlock(bid);
     final pendingBids = await _store.getPendingWriteBids();
     if (pendingBids.contains(bid)) {
       unawaited(flushPendingWrites());
-      final localBlock = await _store.getBlock(bid);
       if (localBlock != null) return NoteModel.fromBlock(localBlock);
     }
 
@@ -339,6 +354,9 @@ class NoteService {
     final data = response['data'];
     final blockData = data is Map<String, dynamic> ? data : response;
     final block = BlockModel(data: blockData);
+    if (_blockIsNewerThan(localBlock, _blockChangedAt(block))) {
+      return NoteModel.fromBlock(localBlock!);
+    }
     await _store.saveBlock(bid, block);
     return NoteModel.fromBlock(block);
   }
@@ -352,7 +370,7 @@ class NoteService {
   }) async {
     final nodeBid = _nodeBid;
     final bid = generateBidV2(nodeBid);
-    final now = DateTime.now().toIso8601String();
+    final now = _blockTimestampNow();
     final data = <String, dynamic>{
       'bid': bid,
       'model': _noteModelId,
@@ -386,10 +404,12 @@ class NoteService {
     required String bid,
     required String title,
     required String content,
+    DateTime? updatedAt,
   }) async {
-    await updateNoteLocal(bid: bid, title: title, content: content);
-
+    final updateTime = _blockTimestamp(updatedAt);
     final localBlock = await _store.getBlock(bid);
+    if (_blockIsNewerThan(localBlock, updatedAt)) return;
+
     Map<String, dynamic> updated = localBlock != null
         ? Map<String, dynamic>.from(localBlock.data)
         : <String, dynamic>{'bid': bid, 'model': _noteModelId};
@@ -409,7 +429,7 @@ class NoteService {
     updated['model'] ??= _noteModelId;
     updated['name'] = title;
     updated['content'] = content;
-    updated['update_time'] = DateTime.now().toIso8601String();
+    updated['update_time'] = updateTime;
 
     if (localBlock != null) {
       final localLink = localBlock.data['link'];
@@ -418,6 +438,9 @@ class NoteService {
         updated['link'] = localLink;
       }
     }
+
+    final latestLocalBlock = await _store.getBlock(bid);
+    if (_blockIsNewerThan(latestLocalBlock, updatedAt)) return;
 
     await _store.saveBlock(bid, BlockModel(data: updated));
     await _store.markPendingWrite(bid);
@@ -434,8 +457,11 @@ class NoteService {
     required String bid,
     required String title,
     required String content,
+    DateTime? updatedAt,
   }) async {
     final existing = await _store.getBlock(bid);
+    if (_blockIsNewerThan(existing, updatedAt)) return;
+
     final Map<String, dynamic> data;
     if (existing != null) {
       data = Map<String, dynamic>.from(existing.data);
@@ -451,7 +477,9 @@ class NoteService {
       final nodeBid = _tryNodeBid();
       if (nodeBid != null) data['node_bid'] = nodeBid;
     }
-    data['update_time'] = DateTime.now().toIso8601String();
+    data['update_time'] = _blockTimestamp(updatedAt);
+    final latestExisting = await _store.getBlock(bid);
+    if (_blockIsNewerThan(latestExisting, updatedAt)) return;
     await _store.saveBlock(bid, BlockModel(data: data));
     await _store.markPendingWrite(bid);
   }
@@ -483,6 +511,7 @@ class NoteService {
     }
     updated['bid'] = bid;
     updated['tag'] = tags;
+    updated['update_time'] = _blockTimestampNow();
     final nodeBid = updated['node_bid'];
     if (nodeBid is! String || nodeBid.isEmpty) {
       final resolvedNodeBid = _tryNodeBid();
@@ -530,6 +559,7 @@ class NoteService {
     } else {
       updated.remove('is_pinned');
     }
+    updated['update_time'] = _blockTimestampNow();
 
     final block = BlockModel(data: updated);
     await _store.saveBlock(bid, block);
@@ -581,6 +611,7 @@ class NoteService {
       links.add(targetCollectionBid); // 加入目标集合
     }
     updated['link'] = links;
+    updated['update_time'] = _blockTimestampNow();
 
     // 提交
     await _api.saveBlock(data: updated);
@@ -607,6 +638,7 @@ class NoteService {
     final blockData = data is Map<String, dynamic> ? data : response;
     final updated = Map<String, dynamic>.from(blockData);
     updated['link_tag'] = linkTags;
+    updated['update_time'] = _blockTimestampNow();
     await _api.saveBlock(data: updated);
     // 更新本地缓存
     await _store.saveBlock(collectionBid, BlockModel(data: updated));

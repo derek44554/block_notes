@@ -39,15 +39,18 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
   List<String> _selectedTags = [];
   Timer? _localSaveTimer;
   Timer? _remoteSaveTimer;
+  Future<void> _editorSyncQueue = Future.value();
+  final Map<String, int> _editorSyncVersions = {};
   bool _bootstrapped = false;
   bool _loadingNote = false;
-  bool _syncingEditor = false;
-  bool _remoteSyncQueued = false;
   bool _applyingEditorText = false;
   int _collectionLoadToken = 0;
   int _noteLoadToken = 0;
   int _editorRevision = 0;
   int _swipeDismissRevision = 0;
+  DateTime? _pendingEditorUpdatedAt;
+  String _lastEditorTitle = '';
+  String _lastEditorContent = '';
   String _lastRemoteTitle = '';
   String _lastRemoteContent = '';
 
@@ -80,7 +83,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
     _noteProvider?.removeListener(_onItemsChanged);
     _localSaveTimer?.cancel();
     _remoteSaveTimer?.cancel();
-    unawaited(_syncEditorRemote(updateUi: false));
+    _queueEditorRemoteSync();
     _searchCtrl.dispose();
     _titleCtrl.dispose();
     _contentCtrl.dispose();
@@ -118,7 +121,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
   Future<void> _selectCollection(NoteCollection collection) async {
     _dismissOpenSwipeActions();
     if (_selectedCollection?.bid == collection.bid) return;
-    await _syncEditorRemote();
+    _queueEditorRemoteSync();
     if (!mounted) return;
     final token = ++_collectionLoadToken;
     setState(() {
@@ -126,6 +129,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
       _selectedNoteBid = null;
       _selectedNote = null;
       _selectedTags = [];
+      _pendingEditorUpdatedAt = null;
       _setEditorText('', '');
     });
     await context.read<CollectionProvider>().setLastOpened(collection.bid);
@@ -168,6 +172,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
         _selectedNoteBid = null;
         _selectedNote = null;
         _selectedTags = [];
+        _pendingEditorUpdatedAt = null;
         _setEditorText('', '');
       });
       return;
@@ -180,13 +185,14 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
       _dismissOpenSwipeActions();
     }
     if (_selectedNoteBid == note.bid && !_loadingNote) return;
-    await _syncEditorRemote();
+    _queueEditorRemoteSync();
     final token = ++_noteLoadToken;
     setState(() {
       _selectedNoteBid = note.bid;
       _selectedNote = note;
       _selectedTags = List<String>.from(note.tags);
       _loadingNote = true;
+      _pendingEditorUpdatedAt = null;
       _setEditorText(note.title, note.content);
       _lastRemoteTitle = note.title;
       _lastRemoteContent = note.content;
@@ -200,6 +206,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
       setState(() {
         _selectedNote = latest;
         _selectedTags = List<String>.from(latest.tags);
+        _pendingEditorUpdatedAt = null;
         _setEditorText(latest.title, latest.content);
         _lastRemoteTitle = latest.title;
         _lastRemoteContent = latest.content;
@@ -217,6 +224,8 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
     _applyingEditorText = true;
     _titleCtrl.text = title;
     _contentCtrl.text = content;
+    _lastEditorTitle = _normalizeTitleText(title);
+    _lastEditorContent = content;
     _titleCtrl.selection = TextSelection.collapsed(
       offset: _titleCtrl.text.length,
     );
@@ -233,27 +242,23 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
 
   void _onEditorChanged() {
     if (_applyingEditorText || _selectedNoteBid == null) return;
-    _editorRevision++;
-    _localSaveTimer?.cancel();
-    _localSaveTimer = Timer(
-      const Duration(milliseconds: 350),
-      _saveEditorLocal,
-    );
-    _remoteSaveTimer?.cancel();
-    _remoteSaveTimer = Timer(const Duration(seconds: 3), _syncEditorRemote);
-  }
-
-  Future<void> _saveEditorLocal() async {
-    final bid = _selectedNoteBid;
-    if (bid == null) return;
+    final bid = _selectedNoteBid!;
     final title = _normalizedTitle;
     final content = _contentCtrl.text;
-    await _noteProvider?.updateNoteLocal(
+    if (title == _lastEditorTitle && content == _lastEditorContent) {
+      return;
+    }
+    _editorRevision++;
+    _lastEditorTitle = title;
+    _lastEditorContent = content;
+    final updatedAt = DateTime.now();
+    _pendingEditorUpdatedAt = updatedAt;
+    _noteProvider?.updateNotePreview(
       bid: bid,
       title: title,
       content: content,
+      updatedAt: updatedAt,
     );
-    if (!mounted || _selectedNoteBid != bid) return;
     setState(() {
       _selectedNote =
           (_selectedNote ??
@@ -267,50 +272,147 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
               .copyWith(
                 title: title,
                 content: content,
-                updatedAt: DateTime.now(),
+                updatedAt: updatedAt,
+              );
+    });
+    _localSaveTimer?.cancel();
+    _localSaveTimer = Timer(
+      const Duration(milliseconds: 350),
+      _saveEditorLocal,
+    );
+    _remoteSaveTimer?.cancel();
+    _remoteSaveTimer = Timer(
+      const Duration(seconds: 3),
+      _queueEditorRemoteSync,
+    );
+  }
+
+  Future<void> _saveEditorLocal() async {
+    final bid = _selectedNoteBid;
+    if (bid == null) return;
+    final title = _normalizedTitle;
+    final content = _contentCtrl.text;
+    final updatedAt = _pendingEditorUpdatedAt ?? DateTime.now();
+    await _noteProvider?.updateNoteLocal(
+      bid: bid,
+      title: title,
+      content: content,
+      updatedAt: updatedAt,
+    );
+    if (!mounted || _selectedNoteBid != bid) return;
+    final latestPendingUpdatedAt = _pendingEditorUpdatedAt;
+    if (latestPendingUpdatedAt != null &&
+        latestPendingUpdatedAt.isAfter(updatedAt)) {
+      return;
+    }
+    setState(() {
+      _selectedNote =
+          (_selectedNote ??
+                  NoteModel(
+                    bid: bid,
+                    title: title,
+                    content: content,
+                    createdAt: DateTime.now(),
+                    updatedAt: DateTime.now(),
+                  ))
+              .copyWith(
+                title: title,
+                content: content,
+                updatedAt: updatedAt,
               );
     });
   }
 
-  Future<void> _syncEditorRemote({bool updateUi = true}) async {
+  void _queueEditorRemoteSync() {
     final bid = _selectedNoteBid;
     if (bid == null) return;
-    if (_syncingEditor) {
-      _remoteSyncQueued = true;
-      return;
-    }
     final title = _normalizedTitle;
     final content = _contentCtrl.text;
-    if (title == _lastRemoteTitle && content == _lastRemoteContent) return;
+    final updatedAt = _pendingEditorUpdatedAt ?? DateTime.now();
+    final collectionBid = _selectedCollection?.bid;
+    final lastRemoteTitle = _lastRemoteTitle;
+    final lastRemoteContent = _lastRemoteContent;
 
-    _syncingEditor = true;
-    if (updateUi && mounted) setState(() {});
+    _localSaveTimer?.cancel();
+    _remoteSaveTimer?.cancel();
+    if (title == lastRemoteTitle && content == lastRemoteContent) return;
+    if (_selectedNoteBid == bid) {
+      _lastRemoteTitle = title;
+      _lastRemoteContent = content;
+    }
+    final syncVersion = (_editorSyncVersions[bid] ?? 0) + 1;
+    _editorSyncVersions[bid] = syncVersion;
+
+    final provider = _noteProvider;
+    unawaited(
+      provider
+          ?.updateNoteLocal(
+            bid: bid,
+            title: title,
+            content: content,
+            updatedAt: updatedAt,
+          )
+          .catchError((_) {}),
+    );
+
+    final sync = _editorSyncQueue
+        .catchError((_) {})
+        .then(
+          (_) => _syncEditorSnapshotRemote(
+            bid: bid,
+            title: title,
+            content: content,
+            updatedAt: updatedAt,
+            collectionBid: collectionBid,
+            syncVersion: syncVersion,
+          ),
+        );
+    _editorSyncQueue = sync.catchError((_) {});
+    unawaited(_editorSyncQueue);
+  }
+
+  Future<void> _syncEditorSnapshotRemote({
+    required String bid,
+    required String title,
+    required String content,
+    required DateTime updatedAt,
+    required String? collectionBid,
+    required int syncVersion,
+  }) async {
+    if (_editorSyncVersions[bid] != syncVersion) return;
     try {
-      await _noteProvider?.updateNote(bid: bid, title: title, content: content);
-      if (_selectedNoteBid == bid) {
+      if (_editorSyncVersions[bid] != syncVersion) return;
+      await _noteProvider?.updateNote(
+        bid: bid,
+        title: title,
+        content: content,
+        updatedAt: updatedAt,
+        collectionBid: collectionBid,
+        refreshItems: false,
+      );
+      if (_selectedNoteBid == bid &&
+          _normalizedTitle == title &&
+          _contentCtrl.text == content) {
         _lastRemoteTitle = title;
         _lastRemoteContent = content;
       }
     } catch (_) {
-    } finally {
-      _syncingEditor = false;
-      if (updateUi && mounted) setState(() {});
-      if (_remoteSyncQueued && mounted) {
-        _remoteSyncQueued = false;
-        unawaited(_syncEditorRemote(updateUi: updateUi));
-      }
     }
   }
 
   String get _normalizedTitle {
-    final title = _titleCtrl.text.trim();
+    return _normalizeTitleText(_titleCtrl.text);
+  }
+
+  String _normalizeTitleText(String value) {
+    final title = value.trim();
     return title.isEmpty ? '无标题' : title;
   }
 
   Future<void> _createNote() async {
     final collection = _selectedCollection;
     if (collection == null) return;
-    await _syncEditorRemote();
+    _queueEditorRemoteSync();
     final note = await _noteProvider?.createNote(
       title: '无标题',
       content: '',
@@ -370,11 +472,16 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
 
   Future<void> _toggleNotePinned(NoteModel note) async {
     final shouldPin = !note.isPinned;
+    final collectionBid = _selectedCollection?.bid;
     if (_selectedNoteBid == note.bid) {
       await _saveEditorLocal();
     }
     try {
-      await _noteProvider?.updateNotePinned(bid: note.bid, isPinned: shouldPin);
+      await _noteProvider?.updateNotePinned(
+        bid: note.bid,
+        isPinned: shouldPin,
+        collectionBid: collectionBid,
+      );
       if (!mounted) return;
       if (_selectedNoteBid == note.bid) {
         setState(() {
@@ -1419,7 +1526,7 @@ class _SidebarCollectionTile extends StatelessWidget {
   }
 }
 
-class _MacArticleList extends StatelessWidget {
+class _MacArticleList extends StatefulWidget {
   const _MacArticleList({
     required this.collection,
     required this.items,
@@ -1455,9 +1562,41 @@ class _MacArticleList extends StatelessWidget {
   final VoidCallback onSetup;
 
   @override
+  State<_MacArticleList> createState() => _MacArticleListState();
+}
+
+class _MacArticleListState extends State<_MacArticleList> {
+  String? _activeSwipeBid;
+
+  @override
+  void didUpdateWidget(covariant _MacArticleList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.collection?.bid != widget.collection?.bid ||
+        oldWidget.swipeDismissRevision != widget.swipeDismissRevision) {
+      _activeSwipeBid = null;
+      return;
+    }
+
+    if (_activeSwipeBid != null &&
+        !widget.items.any((item) => item.bid == _activeSwipeBid)) {
+      _activeSwipeBid = null;
+    }
+  }
+
+  void _activateSwipe(String bid) {
+    if (_activeSwipeBid == bid) return;
+    setState(() => _activeSwipeBid = bid);
+  }
+
+  void _clearSwipe(String bid) {
+    if (_activeSwipeBid != bid) return;
+    setState(() => _activeSwipeBid = null);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).colorScheme.brightness == Brightness.dark;
-    final notes = items.whereType<NoteListItemNote>().toList();
+    final notes = widget.items.whereType<NoteListItemNote>().toList();
 
     return Container(
       color: _MacPalette.listPane(isDark),
@@ -1465,29 +1604,29 @@ class _MacArticleList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ArticleListHeader(
-            collection: collection,
+            collection: widget.collection,
             count: notes.length,
-            syncing: isSyncing,
-            onCreateNote: onCreateNote,
+            syncing: widget.isSyncing,
+            onCreateNote: widget.onCreateNote,
           ),
           Expanded(
             child: Builder(
               builder: (context) {
-                if (!hasConnection) {
+                if (!widget.hasConnection) {
                   return _PaneState(
                     icon: Icons.cloud_off_outlined,
                     title: '尚未配置节点',
                     actionLabel: '配置节点',
-                    onAction: onSetup,
+                    onAction: widget.onSetup,
                   );
                 }
-                if (!hasCollections) {
+                if (!widget.hasCollections) {
                   return _PaneState(
                     icon: Icons.folder_open_outlined,
                     title: '还没有集合',
                   );
                 }
-                if (isLoading && notes.isEmpty) {
+                if (widget.isLoading && notes.isEmpty) {
                   return const Center(
                     child: CircularProgressIndicator(strokeWidth: 2),
                   );
@@ -1497,7 +1636,7 @@ class _MacArticleList extends StatelessWidget {
                     icon: Icons.note_add_outlined,
                     title: '没有备忘录',
                     actionLabel: '新建备忘录',
-                    onAction: onCreateNote,
+                    onAction: widget.onCreateNote,
                   );
                 }
 
@@ -1508,18 +1647,22 @@ class _MacArticleList extends StatelessWidget {
                       _NoteListTile(
                         key: ValueKey(notes[i].note.bid),
                         note: notes[i].note,
-                        selected: notes[i].note.bid == selectedBid,
-                        swipeDismissRevision: swipeDismissRevision,
+                        selected: notes[i].note.bid == widget.selectedBid,
+                        activeSwipeBid: _activeSwipeBid,
+                        swipeDismissRevision: widget.swipeDismissRevision,
                         hideBottomDivider:
-                            notes[i].note.bid == selectedBid ||
+                            notes[i].note.bid == widget.selectedBid ||
                             (i + 1 < notes.length &&
-                                notes[i + 1].note.bid == selectedBid),
-                        collectionTitle: collection?.title ?? '',
-                        onTap: () => onSelectNote(notes[i].note),
-                        onCopyBid: () => onCopyNoteBid(notes[i].note),
-                        onTogglePinned: () => onToggleNotePinned(notes[i].note),
-                        onMove: () => onMoveNote(notes[i].note),
-                        onDelete: () => onDeleteNote(notes[i].note),
+                                notes[i + 1].note.bid == widget.selectedBid),
+                        collectionTitle: widget.collection?.title ?? '',
+                        onSwipeActivated: _activateSwipe,
+                        onSwipeClosed: _clearSwipe,
+                        onTap: () => widget.onSelectNote(notes[i].note),
+                        onCopyBid: () => widget.onCopyNoteBid(notes[i].note),
+                        onTogglePinned: () =>
+                            widget.onToggleNotePinned(notes[i].note),
+                        onMove: () => widget.onMoveNote(notes[i].note),
+                        onDelete: () => widget.onDeleteNote(notes[i].note),
                       ),
                   ],
                 );
@@ -1620,9 +1763,12 @@ class _NoteListTile extends StatefulWidget {
     super.key,
     required this.note,
     required this.selected,
+    required this.activeSwipeBid,
     required this.swipeDismissRevision,
     required this.hideBottomDivider,
     required this.collectionTitle,
+    required this.onSwipeActivated,
+    required this.onSwipeClosed,
     required this.onTap,
     required this.onCopyBid,
     required this.onTogglePinned,
@@ -1632,9 +1778,12 @@ class _NoteListTile extends StatefulWidget {
 
   final NoteModel note;
   final bool selected;
+  final String? activeSwipeBid;
   final int swipeDismissRevision;
   final bool hideBottomDivider;
   final String collectionTitle;
+  final ValueChanged<String> onSwipeActivated;
+  final ValueChanged<String> onSwipeClosed;
   final VoidCallback onTap;
   final VoidCallback onCopyBid;
   final VoidCallback onTogglePinned;
@@ -1646,7 +1795,7 @@ class _NoteListTile extends StatefulWidget {
 }
 
 class _NoteListTileState extends State<_NoteListTile> {
-  static const double _actionWidth = 76;
+  static const double _actionWidth = 54;
   static const double _openThreshold = 36;
   static const Duration _slideDuration = Duration(milliseconds: 180);
 
@@ -1660,6 +1809,11 @@ class _NoteListTileState extends State<_NoteListTile> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.note.bid != widget.note.bid ||
         oldWidget.swipeDismissRevision != widget.swipeDismissRevision) {
+      _resetSwipeState();
+      return;
+    }
+
+    if (widget.activeSwipeBid != widget.note.bid && _isOpen) {
       _resetSwipeState();
     }
   }
@@ -1703,6 +1857,9 @@ class _NoteListTileState extends State<_NoteListTile> {
     final next = side > 0
         ? proposed.clamp(0, _actionWidth).toDouble()
         : proposed.clamp(-_actionWidth, 0).toDouble();
+    if (next.abs() > 0.5 && widget.activeSwipeBid != widget.note.bid) {
+      widget.onSwipeActivated(widget.note.bid);
+    }
     setState(() {
       _activeSwipeSide = side.toInt();
       _offset = _clampOffset(next);
@@ -1727,6 +1884,11 @@ class _NoteListTileState extends State<_NoteListTile> {
       _activeSwipeSide = target == 0 ? null : side?.toInt();
       _offset = target;
     });
+    if (target == 0) {
+      widget.onSwipeClosed(widget.note.bid);
+    } else if (widget.activeSwipeBid != widget.note.bid) {
+      widget.onSwipeActivated(widget.note.bid);
+    }
   }
 
   void _close() {
@@ -1736,6 +1898,7 @@ class _NoteListTileState extends State<_NoteListTile> {
       _activeSwipeSide = null;
       _offset = 0;
     });
+    widget.onSwipeClosed(widget.note.bid);
   }
 
   void _handlePointerSignal(PointerSignalEvent event) {
@@ -2028,8 +2191,8 @@ class _NoteSwipeIconAction extends StatelessWidget {
               customBorder: const CircleBorder(),
               onTap: onPressed,
               child: SizedBox.square(
-                dimension: 54,
-                child: Icon(icon, size: 25, color: foreground),
+                dimension: 34,
+                child: Icon(icon, size: 17, color: foreground),
               ),
             ),
           ),
