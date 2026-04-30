@@ -675,10 +675,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
                 onSelect: _selectCollection,
                 onCreateCollection: () => _showCreateCollectionDialog(),
                 onJoinCollection: _showJoinCollectionDialog,
-                onOpenSettings: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                ),
+                onOpenSettings: () => showSettingsDialog(context),
                 onCopyCollectionBid: _copyCollectionBid,
                 onCreateChildCollection: (collection) =>
                     _showCreateCollectionDialog(parentBid: collection.bid),

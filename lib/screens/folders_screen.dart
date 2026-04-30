@@ -48,7 +48,8 @@ class _FoldersScreenState extends State<FoldersScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 36, height: 4,
+                width: 36,
+                height: 4,
                 margin: const EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
                   color: cs.onSurfaceVariant.withValues(alpha: 0.3),
@@ -57,12 +58,17 @@ class _FoldersScreenState extends State<FoldersScreen> {
               ),
               ListTile(
                 leading: Container(
-                  width: 36, height: 36,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFCC00),
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: const Icon(Icons.create_new_folder_rounded, color: Colors.white, size: 20),
+                  child: const Icon(
+                    Icons.create_new_folder_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                 ),
                 title: const Text('新建集合'),
                 subtitle: const Text('在节点上创建一个新集合'),
@@ -73,12 +79,17 @@ class _FoldersScreenState extends State<FoldersScreen> {
               ),
               ListTile(
                 leading: Container(
-                  width: 36, height: 36,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     color: cs.primary,
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: const Icon(Icons.folder_shared_rounded, color: Colors.white, size: 20),
+                  child: const Icon(
+                    Icons.folder_shared_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                 ),
                 title: const Text('加入集合'),
                 subtitle: const Text('通过 BID 加入已有集合'),
@@ -95,7 +106,10 @@ class _FoldersScreenState extends State<FoldersScreen> {
     );
   }
 
-  Future<void> _showCreateCollectionDialog(BuildContext context, {String? parentBid}) async {
+  Future<void> _showCreateCollectionDialog(
+    BuildContext context, {
+    String? parentBid,
+  }) async {
     final ctrl = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
@@ -111,7 +125,10 @@ class _FoldersScreenState extends State<FoldersScreen> {
           ),
         ),
         actions: [
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('创建')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('创建'),
+          ),
         ],
       ),
     );
@@ -123,7 +140,10 @@ class _FoldersScreenState extends State<FoldersScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final service = NoteService(connectionProvider);
-      final collection = await service.createCollection(ctrl.text.trim(), parentBid: parentBid);
+      final collection = await service.createCollection(
+        ctrl.text.trim(),
+        parentBid: parentBid,
+      );
       await collectionProvider.addCollection(collection);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('创建失败：$e')));
@@ -146,7 +166,10 @@ class _FoldersScreenState extends State<FoldersScreen> {
           ),
         ),
         actions: [
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('加入')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('加入'),
+          ),
         ],
       ),
     );
@@ -184,7 +207,8 @@ class _FoldersScreenState extends State<FoldersScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 36, height: 4,
+                  width: 36,
+                  height: 4,
                   margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
                     color: cs.onSurfaceVariant.withValues(alpha: 0.3),
@@ -193,7 +217,13 @@ class _FoldersScreenState extends State<FoldersScreen> {
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  child: Text(col.title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  child: Text(
+                    col.title,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
                 const Divider(height: 1),
                 ListTile(
@@ -203,13 +233,19 @@ class _FoldersScreenState extends State<FoldersScreen> {
                     Navigator.pop(context);
                     Clipboard.setData(ClipboardData(text: col.bid));
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('BID 已复制'), duration: Duration(seconds: 2)),
+                      const SnackBar(
+                        content: Text('BID 已复制'),
+                        duration: Duration(seconds: 2),
+                      ),
                     );
                   },
                 ),
                 if (!isDefault)
                   ListTile(
-                    leading: const Icon(Icons.star_rounded, color: Color(0xFFFFCC00)),
+                    leading: const Icon(
+                      Icons.star_rounded,
+                      color: Color(0xFFFFCC00),
+                    ),
                     title: const Text('设为默认集合'),
                     onTap: () {
                       Navigator.pop(context);
@@ -218,7 +254,10 @@ class _FoldersScreenState extends State<FoldersScreen> {
                   )
                 else
                   ListTile(
-                    leading: Icon(Icons.star_border_rounded, color: cs.onSurfaceVariant),
+                    leading: Icon(
+                      Icons.star_border_rounded,
+                      color: cs.onSurfaceVariant,
+                    ),
                     title: const Text('取消默认集合'),
                     onTap: () {
                       Navigator.pop(context);
@@ -249,9 +288,14 @@ class _FoldersScreenState extends State<FoldersScreen> {
         title: const Text('移除集合'),
         content: Text('从列表中移除「${col.title}」？\n（不会删除远端数据）'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () {
               Navigator.pop(context);
               context.read<CollectionProvider>().removeCollection(col.bid);
@@ -264,7 +308,10 @@ class _FoldersScreenState extends State<FoldersScreen> {
   }
 
   void _openCollection(BuildContext context, NoteCollection col) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => NotesListScreen(collection: col)));
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => NotesListScreen(collection: col)),
+    );
   }
 
   @override
@@ -308,7 +355,11 @@ class _FoldersScreenState extends State<FoldersScreen> {
                     const Expanded(
                       child: Text(
                         '备忘录',
-                        style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -0.5),
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.5,
+                        ),
                       ),
                     ),
                     if (conn.hasActiveConnection)
@@ -319,10 +370,7 @@ class _FoldersScreenState extends State<FoldersScreen> {
                       ),
                     IconButton(
                       icon: const Icon(Icons.settings_outlined),
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                      ),
+                      onPressed: () => showSettingsDialog(context),
                     ),
                   ],
                 ),
@@ -333,7 +381,10 @@ class _FoldersScreenState extends State<FoldersScreen> {
           if (!conn.hasActiveConnection)
             SliverFillRemaining(
               child: _NoConnectionView(
-                onSetup: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SetupScreen())),
+                onSetup: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SetupScreen()),
+                ),
               ),
             )
           else if (colls.collections.isEmpty)
@@ -345,7 +396,6 @@ class _FoldersScreenState extends State<FoldersScreen> {
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-
                   // ── 默认集合区域（始终显示）──
                   _SectionHeader(label: '默认集合'),
                   if (defaultCol != null)
@@ -369,7 +419,6 @@ class _FoldersScreenState extends State<FoldersScreen> {
                       onLongPress: (col) => _showActionSheet(context, col),
                     ),
                   ],
-
                 ]),
               ),
             ),
@@ -418,7 +467,9 @@ class _FolderGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final cardColor = cs.brightness == Brightness.dark ? const Color(0xFF2C2C2E) : Colors.white;
+    final cardColor = cs.brightness == Brightness.dark
+        ? const Color(0xFF2C2C2E)
+        : Colors.white;
 
     return Container(
       decoration: BoxDecoration(
@@ -437,7 +488,11 @@ class _FolderGroup extends StatelessWidget {
               onLongPress: () => onLongPress(collections[i]),
             ),
             if (i < collections.length - 1)
-              Divider(height: 1, indent: 52, color: cs.outlineVariant.withValues(alpha: 0.4)),
+              Divider(
+                height: 1,
+                indent: 52,
+                color: cs.outlineVariant.withValues(alpha: 0.4),
+              ),
           ],
         ],
       ),
@@ -464,7 +519,9 @@ class _FolderTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final iconColor = isDefaultGroup ? const Color(0xFFFFCC00) : const Color(0xFFFFCC00);
+    final iconColor = isDefaultGroup
+        ? const Color(0xFFFFCC00)
+        : const Color(0xFFFFCC00);
 
     return InkWell(
       onTap: onTap,
@@ -478,13 +535,16 @@ class _FolderTile extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 28, height: 28,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
                 color: iconColor,
                 borderRadius: BorderRadius.circular(7),
               ),
               child: Icon(
-                isDefaultGroup ? Icons.folder_special_rounded : Icons.folder_rounded,
+                isDefaultGroup
+                    ? Icons.folder_special_rounded
+                    : Icons.folder_rounded,
                 color: Colors.white,
                 size: 17,
               ),
@@ -501,9 +561,17 @@ class _FolderTile extends StatelessWidget {
             if (isDefaultGroup)
               Padding(
                 padding: const EdgeInsets.only(right: 4),
-                child: Icon(Icons.star_rounded, size: 14, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                child: Icon(
+                  Icons.star_rounded,
+                  size: 14,
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                ),
               ),
-            Icon(Icons.chevron_right_rounded, size: 20, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
           ],
         ),
       ),
@@ -515,7 +583,9 @@ class _EmptyDefaultFolder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final cardColor = cs.brightness == Brightness.dark ? const Color(0xFF2C2C2E) : Colors.white;
+    final cardColor = cs.brightness == Brightness.dark
+        ? const Color(0xFF2C2C2E)
+        : Colors.white;
     return Container(
       decoration: BoxDecoration(
         color: cardColor,
@@ -531,13 +601,20 @@ class _EmptyDefaultFolder extends StatelessWidget {
               color: cs.onSurfaceVariant.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(7),
             ),
-            child: Icon(Icons.folder_special_outlined, color: cs.onSurfaceVariant.withValues(alpha: 0.5), size: 17),
+            child: Icon(
+              Icons.folder_special_outlined,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+              size: 17,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               '长按集合可设为默认集合',
-              style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+              style: TextStyle(
+                fontSize: 14,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+              ),
             ),
           ),
         ],
@@ -559,13 +636,32 @@ class _NoConnectionView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off_rounded, size: 64, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+            Icon(
+              Icons.cloud_off_rounded,
+              size: 64,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+            ),
             const SizedBox(height: 16),
-            Text('尚未配置节点', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: cs.onSurface)),
+            Text(
+              '尚未配置节点',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: cs.onSurface,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('请先配置 Block 节点', style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant), textAlign: TextAlign.center),
+            Text(
+              '请先配置 Block 节点',
+              style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 24),
-            FilledButton.icon(onPressed: onSetup, icon: const Icon(Icons.settings_outlined), label: const Text('配置节点')),
+            FilledButton.icon(
+              onPressed: onSetup,
+              icon: const Icon(Icons.settings_outlined),
+              label: const Text('配置节点'),
+            ),
           ],
         ),
       ),
@@ -586,13 +682,31 @@ class _EmptyView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.folder_open_rounded, size: 64, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+            Icon(
+              Icons.folder_open_rounded,
+              size: 64,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+            ),
             const SizedBox(height: 16),
-            Text('还没有集合', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: cs.onSurface)),
+            Text(
+              '还没有集合',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: cs.onSurface,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('点击右上角 + 加入一个集合', style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant)),
+            Text(
+              '点击右上角 + 加入一个集合',
+              style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant),
+            ),
             const SizedBox(height: 24),
-            FilledButton.icon(onPressed: onAdd, icon: const Icon(Icons.add_rounded), label: const Text('加入集合')),
+            FilledButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('加入集合'),
+            ),
           ],
         ),
       ),

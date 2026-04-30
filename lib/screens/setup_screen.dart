@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:block_flutter/block_flutter.dart';
+import '../core/platform_helper.dart';
 import '../providers/connection_provider.dart';
 
 class SetupScreen extends StatefulWidget {
-  const SetupScreen({super.key});
+  const SetupScreen({super.key, this.inDialog = false});
+
+  final bool inDialog;
 
   @override
   State<SetupScreen> createState() => _SetupScreenState();
@@ -29,7 +32,10 @@ class _SetupScreenState extends State<SetupScreen> {
 
   Future<void> _testAndSave() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _testing = true; _testError = null; });
+    setState(() {
+      _testing = true;
+      _testError = null;
+    });
 
     final connection = ConnectionModel(
       name: _nameCtrl.text.trim(),
@@ -42,15 +48,16 @@ class _SetupScreenState extends State<SetupScreen> {
       final api = NodeApi(connection: connection);
       await api.getSignature();
 
-      final nodeData = await ApiClient(connection: connection).postToBridge(
-        protocol: 'open',
-        routing: '/node/node',
-        data: const {},
-      );
+      final nodeData = await ApiClient(
+        connection: connection,
+      ).postToBridge(protocol: 'open', routing: '/node/node', data: const {});
 
       if (!mounted) return;
       await context.read<ConnectionProvider>().addConnection(
-        connection.copyWith(status: ConnectionStatus.connected, nodeData: nodeData),
+        connection.copyWith(
+          status: ConnectionStatus.connected,
+          nodeData: nodeData,
+        ),
       );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -65,9 +72,22 @@ class _SetupScreenState extends State<SetupScreen> {
   Widget build(BuildContext context) {
     final provider = context.watch<ConnectionProvider>();
     final cs = Theme.of(context).colorScheme;
+    final needsMacLeadingGap =
+        !widget.inDialog &&
+        PlatformHelper.isMacOS &&
+        (ModalRoute.of(context)?.canPop ?? false);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('节点设置')),
+      appBar: AppBar(
+        leading: needsMacLeadingGap
+            ? const Padding(
+                padding: EdgeInsets.only(left: 64),
+                child: BackButton(),
+              )
+            : null,
+        leadingWidth: needsMacLeadingGap ? 112 : null,
+        title: const Text('节点设置'),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
         child: Column(
@@ -78,7 +98,8 @@ class _SetupScreenState extends State<SetupScreen> {
               ...provider.connections.asMap().entries.map((e) {
                 final i = e.key;
                 final c = e.value;
-                final isActive = provider.activeConnection?.address == c.address;
+                final isActive =
+                    provider.activeConnection?.address == c.address;
                 return _NodeCard(
                   connection: c,
                   isActive: isActive,
@@ -93,7 +114,9 @@ class _SetupScreenState extends State<SetupScreen> {
               decoration: BoxDecoration(
                 color: cs.surfaceContainerLow,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.4)),
+                border: Border.all(
+                  color: cs.outlineVariant.withValues(alpha: 0.4),
+                ),
               ),
               padding: const EdgeInsets.all(16),
               child: Form(
@@ -104,25 +127,44 @@ class _SetupScreenState extends State<SetupScreen> {
                       icon: Icons.label_outline_rounded,
                       child: TextFormField(
                         controller: _nameCtrl,
-                        decoration: const InputDecoration(labelText: '节点名称', border: InputBorder.none, isDense: true),
-                        validator: (v) => v == null || v.trim().isEmpty ? '请输入名称' : null,
+                        decoration: const InputDecoration(
+                          labelText: '节点名称',
+                          border: InputBorder.none,
+                          isDense: true,
+                        ),
+                        validator: (v) =>
+                            v == null || v.trim().isEmpty ? '请输入名称' : null,
                       ),
                     ),
-                    Divider(height: 20, indent: 30, color: cs.outlineVariant.withValues(alpha: 0.5)),
+                    Divider(
+                      height: 20,
+                      indent: 30,
+                      color: cs.outlineVariant.withValues(alpha: 0.5),
+                    ),
                     _FieldRow(
                       icon: Icons.dns_rounded,
                       child: TextFormField(
                         controller: _addressCtrl,
-                        decoration: const InputDecoration(labelText: '节点地址', hintText: 'http://192.168.1.100:8080', border: InputBorder.none, isDense: true),
+                        decoration: const InputDecoration(
+                          labelText: '节点地址',
+                          hintText: 'http://192.168.1.100:8080',
+                          border: InputBorder.none,
+                          isDense: true,
+                        ),
                         keyboardType: TextInputType.url,
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) return '请输入地址';
-                          if (!v.trim().startsWith('http')) return '地址需以 http:// 开头';
+                          if (!v.trim().startsWith('http'))
+                            return '地址需以 http:// 开头';
                           return null;
                         },
                       ),
                     ),
-                    Divider(height: 20, indent: 30, color: cs.outlineVariant.withValues(alpha: 0.5)),
+                    Divider(
+                      height: 20,
+                      indent: 30,
+                      color: cs.outlineVariant.withValues(alpha: 0.5),
+                    ),
                     _FieldRow(
                       icon: Icons.key_rounded,
                       child: TextFormField(
@@ -133,11 +175,18 @@ class _SetupScreenState extends State<SetupScreen> {
                           border: InputBorder.none,
                           isDense: true,
                           suffixIcon: IconButton(
-                            icon: Icon(_keyVisible ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18),
-                            onPressed: () => setState(() => _keyVisible = !_keyVisible),
+                            icon: Icon(
+                              _keyVisible
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                              size: 18,
+                            ),
+                            onPressed: () =>
+                                setState(() => _keyVisible = !_keyVisible),
                           ),
                         ),
-                        validator: (v) => v == null || v.trim().isEmpty ? '请输入密钥' : null,
+                        validator: (v) =>
+                            v == null || v.trim().isEmpty ? '请输入密钥' : null,
                       ),
                     ),
                     if (_testError != null) ...[
@@ -150,9 +199,21 @@ class _SetupScreenState extends State<SetupScreen> {
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.error_outline_rounded, color: cs.onErrorContainer, size: 18),
+                            Icon(
+                              Icons.error_outline_rounded,
+                              color: cs.onErrorContainer,
+                              size: 18,
+                            ),
                             const SizedBox(width: 8),
-                            Expanded(child: Text(_testError!, style: TextStyle(color: cs.onErrorContainer, fontSize: 13))),
+                            Expanded(
+                              child: Text(
+                                _testError!,
+                                style: TextStyle(
+                                  color: cs.onErrorContainer,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -163,7 +224,14 @@ class _SetupScreenState extends State<SetupScreen> {
                       child: FilledButton.icon(
                         onPressed: _testing ? null : _testAndSave,
                         icon: _testing
-                            ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            ? const SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
                             : const Icon(Icons.check_circle_outline_rounded),
                         label: Text(_testing ? '连接中...' : '测试并保存'),
                       ),
@@ -187,9 +255,14 @@ class _SetupScreenState extends State<SetupScreen> {
         title: const Text('删除节点'),
         content: Text('确定要删除节点「$name」吗？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () {
               Navigator.pop(context);
               context.read<ConnectionProvider>().removeConnection(index);
@@ -203,7 +276,12 @@ class _SetupScreenState extends State<SetupScreen> {
 }
 
 class _NodeCard extends StatelessWidget {
-  const _NodeCard({required this.connection, required this.isActive, required this.onDelete, this.onSwitch});
+  const _NodeCard({
+    required this.connection,
+    required this.isActive,
+    required this.onDelete,
+    this.onSwitch,
+  });
   final ConnectionModel connection;
   final bool isActive;
   final VoidCallback? onSwitch;
@@ -215,21 +293,32 @@ class _NodeCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: isActive ? cs.primaryContainer.withValues(alpha: 0.45) : cs.surfaceContainerLow,
+        color: isActive
+            ? cs.primaryContainer.withValues(alpha: 0.45)
+            : cs.surfaceContainerLow,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: isActive ? cs.primary.withValues(alpha: 0.35) : cs.outlineVariant.withValues(alpha: 0.4)),
+        border: Border.all(
+          color: isActive
+              ? cs.primary.withValues(alpha: 0.35)
+              : cs.outlineVariant.withValues(alpha: 0.4),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
             Container(
-              width: 38, height: 38,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 color: isActive ? cs.primary : cs.surfaceContainerHigh,
                 shape: BoxShape.circle,
               ),
-              child: Icon(isActive ? Icons.wifi_rounded : Icons.wifi_off_rounded, size: 18, color: isActive ? Colors.white : cs.onSurfaceVariant),
+              child: Icon(
+                isActive ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+                size: 18,
+                color: isActive ? Colors.white : cs.onSurfaceVariant,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -238,25 +327,68 @@ class _NodeCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(connection.name, style: TextStyle(fontSize: 14, fontWeight: isActive ? FontWeight.w600 : FontWeight.normal, color: isActive ? cs.onPrimaryContainer : cs.onSurface)),
+                      Text(
+                        connection.name,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: isActive
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                          color: isActive
+                              ? cs.onPrimaryContainer
+                              : cs.onSurface,
+                        ),
+                      ),
                       if (isActive) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(6)),
-                          child: Text('当前', style: TextStyle(fontSize: 10, color: cs.onPrimary, fontWeight: FontWeight.w600)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: cs.primary,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '当前',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: cs.onPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ],
                     ],
                   ),
                   const SizedBox(height: 2),
-                  Text(connection.address, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(
+                    connection.address,
+                    style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
             ),
             if (onSwitch != null)
-              TextButton(onPressed: onSwitch, style: TextButton.styleFrom(visualDensity: VisualDensity.compact), child: const Text('切换')),
-            IconButton(icon: Icon(Icons.delete_outline_rounded, color: cs.error, size: 20), visualDensity: VisualDensity.compact, onPressed: onDelete),
+              TextButton(
+                onPressed: onSwitch,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: const Text('切换'),
+              ),
+            IconButton(
+              icon: Icon(
+                Icons.delete_outline_rounded,
+                color: cs.error,
+                size: 20,
+              ),
+              visualDensity: VisualDensity.compact,
+              onPressed: onDelete,
+            ),
           ],
         ),
       ),
@@ -273,7 +405,14 @@ class _SectionLabel extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 8),
-      child: Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w600, letterSpacing: 0.8)),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: cs.primary,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.8,
+        ),
+      ),
     );
   }
 }
