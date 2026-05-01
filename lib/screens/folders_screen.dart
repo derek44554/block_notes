@@ -61,12 +61,12 @@ class _FoldersScreenState extends State<FoldersScreen> {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFCC00),
+                    color: cs.secondary,
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.create_new_folder_rounded,
-                    color: Colors.white,
+                    color: cs.onSecondary,
                     size: 20,
                   ),
                 ),
@@ -85,9 +85,9 @@ class _FoldersScreenState extends State<FoldersScreen> {
                     color: cs.primary,
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.folder_shared_rounded,
-                    color: Colors.white,
+                    color: cs.onPrimary,
                     size: 20,
                   ),
                 ),
@@ -242,10 +242,7 @@ class _FoldersScreenState extends State<FoldersScreen> {
                 ),
                 if (!isDefault)
                   ListTile(
-                    leading: const Icon(
-                      Icons.star_rounded,
-                      color: Color(0xFFFFCC00),
-                    ),
+                    leading: Icon(Icons.star_rounded, color: cs.primary),
                     title: const Text('设为默认集合'),
                     onTap: () {
                       Navigator.pop(context);
@@ -319,8 +316,7 @@ class _FoldersScreenState extends State<FoldersScreen> {
     final conn = context.watch<ConnectionProvider>();
     final colls = context.watch<CollectionProvider>();
     final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
+    final bgColor = Theme.of(context).scaffoldBackgroundColor;
 
     final defaultCol = colls.defaultCollection;
     final regularCols = colls.regularCollections;
@@ -358,7 +354,7 @@ class _FoldersScreenState extends State<FoldersScreen> {
                         style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.w700,
-                          letterSpacing: -0.5,
+                          letterSpacing: 0,
                         ),
                       ),
                     ),
@@ -445,7 +441,7 @@ class _SectionHeader extends StatelessWidget {
           fontSize: 13,
           fontWeight: FontWeight.w600,
           color: cs.onSurfaceVariant,
-          letterSpacing: 0.3,
+          letterSpacing: 0,
         ),
       ),
     );
@@ -467,14 +463,13 @@ class _FolderGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final cardColor = cs.brightness == Brightness.dark
-        ? const Color(0xFF2C2C2E)
-        : Colors.white;
+    final cardColor = cs.surfaceContainerLow;
 
     return Container(
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
       ),
       child: Column(
         children: [
@@ -519,9 +514,8 @@ class _FolderTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final iconColor = isDefaultGroup
-        ? const Color(0xFFFFCC00)
-        : const Color(0xFFFFCC00);
+    final iconColor = isDefaultGroup ? cs.primary : cs.secondary;
+    final iconForeground = isDefaultGroup ? cs.onPrimary : cs.onSecondary;
 
     return InkWell(
       onTap: onTap,
@@ -545,7 +539,7 @@ class _FolderTile extends StatelessWidget {
                 isDefaultGroup
                     ? Icons.folder_special_rounded
                     : Icons.folder_rounded,
-                color: Colors.white,
+                color: iconForeground,
                 size: 17,
               ),
             ),
@@ -583,13 +577,12 @@ class _EmptyDefaultFolder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final cardColor = cs.brightness == Brightness.dark
-        ? const Color(0xFF2C2C2E)
-        : Colors.white;
+    final cardColor = cs.surfaceContainerLow;
     return Container(
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(

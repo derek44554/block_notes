@@ -8,6 +8,7 @@ import '../models/note_collection.dart';
 import '../providers/note_provider.dart';
 import '../providers/collection_provider.dart';
 import '../services/note_local_store.dart';
+import '../theme/app_theme.dart';
 
 class NoteEditorScreen extends StatefulWidget {
   const NoteEditorScreen({
@@ -109,7 +110,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
       );
     } else {
       // 第一次输入内容的新文档，直接创建
-      final targetCollection = widget.collection ?? _collectionProvider?.defaultCollection;
+      final targetCollection =
+          widget.collection ?? _collectionProvider?.defaultCollection;
       if (targetCollection != null) {
         final newNote = await widget.noteProvider.createNote(
           title: title.isEmpty ? '无标题' : title,
@@ -152,7 +154,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
         debugPrint('[SYNC] Remote sync successful');
       } else {
         // 还是新文档，内容刚输入，在这里创建
-        final targetCollection = widget.collection ?? _collectionProvider?.defaultCollection;
+        final targetCollection =
+            widget.collection ?? _collectionProvider?.defaultCollection;
         if (targetCollection != null) {
           final newNote = await widget.noteProvider.createNote(
             title: finalTitle,
@@ -185,7 +188,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
   void didChangeMetrics() {
     super.didChangeMetrics();
     final bottom = WidgetsBinding
-        .instance.platformDispatcher.views.first.viewInsets.bottom;
+        .instance
+        .platformDispatcher
+        .views
+        .first
+        .viewInsets
+        .bottom;
     final nowVisible = bottom > 100;
     if (_keyboardVisible && !nowVisible) {
       if (mounted) FocusScope.of(context).unfocus();
@@ -253,7 +261,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
 
     if (title.isEmpty && content.isEmpty) return;
 
-    final targetCollection = widget.collection ?? _collectionProvider?.defaultCollection;
+    final targetCollection =
+        widget.collection ?? _collectionProvider?.defaultCollection;
 
     if (_isEffectivelyEditing) {
       try {
@@ -330,7 +339,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 36, height: 4,
+                width: 36,
+                height: 4,
                 margin: const EdgeInsets.only(bottom: 4),
                 decoration: BoxDecoration(
                   color: cs.onSurfaceVariant.withValues(alpha: 0.3),
@@ -371,7 +381,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
       case 'copy_bid':
         Clipboard.setData(ClipboardData(text: _currentBid!));
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('BID 已复制'), duration: Duration(seconds: 2)),
+          const SnackBar(
+            content: Text('BID 已复制'),
+            duration: Duration(seconds: 2),
+          ),
         );
       case 'add_tag':
         await _showAddTagDialog();
@@ -427,7 +440,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
       // 提交失败，回滚本地显示
       if (mounted) {
         setState(() => _tags = _tags.where((t) => t != tag).toList());
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('添加失败：$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('添加失败：$e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -448,7 +463,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 36, height: 4,
+                width: 36,
+                height: 4,
                 margin: const EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
                   color: cs.onSurfaceVariant.withValues(alpha: 0.3),
@@ -457,7 +473,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: Text('#$tag', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                child: Text(
+                  '#$tag',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
               const Divider(height: 1),
               ListTile(
@@ -483,9 +505,14 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
         title: const Text('删除标签'),
         content: Text('确定要删除标签「#$tag」吗？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () {
               Navigator.pop(context);
               _deleteTag(tag);
@@ -501,11 +528,16 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
     try {
       final refreshed = await widget.noteProvider.refreshNote(_currentBid!);
       final existing = List<String>.from(refreshed.tags)..remove(tag);
-      await widget.noteProvider.updateNoteTags(bid: _currentBid!, tags: existing);
+      await widget.noteProvider.updateNoteTags(
+        bid: _currentBid!,
+        tags: existing,
+      );
       if (mounted) setState(() => _tags = existing);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除失败：$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('删除失败：$e')));
       }
     }
   }
@@ -519,9 +551,14 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
         title: const Text('删除'),
         content: const Text('确定要删除这条备忘录吗？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('删除'),
           ),
@@ -534,7 +571,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
         if (mounted) Navigator.of(context).pop();
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除失败：$e')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('删除失败：$e')));
         }
       }
     }
@@ -550,7 +589,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = cs.brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF1C1C1E) : Colors.white;
+    final bgColor = isDark ? AppPalette.nightInk : AppPalette.lightSurface;
+    final controlColor = isDark
+        ? cs.surfaceContainerHighest.withValues(alpha: 0.62)
+        : cs.surfaceContainerLow.withValues(alpha: 0.72);
+    final controlBorder = cs.outlineVariant.withValues(
+      alpha: isDark ? 0.36 : 0.55,
+    );
 
     return PopScope(
       canPop: false,
@@ -585,24 +630,33 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
                         Wrap(
                           spacing: 6,
                           runSpacing: 6,
-                          children: _tags.map((tag) => GestureDetector(
-                            onLongPress: () => _onLongPressTag(tag),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.6),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '#$tag',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          children: _tags
+                              .map(
+                                (tag) => GestureDetector(
+                                  onLongPress: () => _onLongPressTag(tag),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: cs.primaryContainer.withValues(
+                                        alpha: 0.6,
+                                      ),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '#$tag',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: cs.onPrimaryContainer,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                          )).toList(),
+                              )
+                              .toList(),
                         ),
                         const SizedBox(height: 10),
                       ],
@@ -610,7 +664,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
                         controller: _titleCtrl,
                         focusNode: _titleFocus,
                         autofocus: !_hasContent,
-                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, height: 1.5),
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          height: 1.5,
+                        ),
                         decoration: const InputDecoration(
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
@@ -627,7 +685,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
                         focusNode: FocusNode(),
                         onKeyEvent: (event) {
                           if (event is KeyDownEvent &&
-                              event.logicalKey == LogicalKeyboardKey.backspace) {
+                              event.logicalKey ==
+                                  LogicalKeyboardKey.backspace) {
                             _mergeToTitle();
                           }
                         },
@@ -646,7 +705,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
                           maxLines: null,
                         ),
                       ),
-                      SizedBox(height: MediaQuery.of(context).size.height * 0.5),
+                      SizedBox(
+                        height: MediaQuery.of(context).size.height * 0.5,
+                      ),
                     ],
                   ),
                 ),
@@ -661,72 +722,67 @@ class _NoteEditorScreenState extends State<NoteEditorScreen>
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                       child: Container(
-                        width: 44, height: 44,
+                        width: 44,
+                        height: 44,
                         decoration: BoxDecoration(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.12)
-                              : Colors.grey.withValues(alpha: 0.08),
+                          color: controlColor,
                           shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.08)
-                                : Colors.black.withValues(alpha: 0.06),
-                            width: 0.5,
-                          ),
+                          border: Border.all(color: controlBorder, width: 0.5),
                         ),
-                        child: Icon(Icons.arrow_back_ios_new_rounded,
-                            size: 20, color: cs.onSurface),
+                        child: Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 20,
+                          color: cs.onSurface,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            // 固定悬浮的更多按钮（玻璃效果）
-            Positioned(
-              top: 8,
-              right: 16,
-              child: GestureDetector(
-                onTap: _showMoreMenu,
-                child: ClipOval(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                    child: Container(
-                      width: 44, height: 44,
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.12)
-                            : Colors.grey.withValues(alpha: 0.08),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.08)
-                              : Colors.black.withValues(alpha: 0.06),
-                          width: 0.5,
-                        ),
-                      ),
-                      child: Icon(Icons.more_horiz_rounded,
-                          size: 22, color: cs.onSurface),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            if (_refreshing || _saving)
+              // 固定悬浮的更多按钮（玻璃效果）
               Positioned(
-                top: 20,
-                left: 68,
-                child: SizedBox(
-                  width: 14, height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                top: 8,
+                right: 16,
+                child: GestureDetector(
+                  onTap: _showMoreMenu,
+                  child: ClipOval(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: controlColor,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: controlBorder, width: 0.5),
+                        ),
+                        child: Icon(
+                          Icons.more_horiz_rounded,
+                          size: 22,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
-          ],
+              if (_refreshing || _saving)
+                Positioned(
+                  top: 20,
+                  left: 68,
+                  child: SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

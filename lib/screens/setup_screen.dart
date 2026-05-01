@@ -224,12 +224,12 @@ class _SetupScreenState extends State<SetupScreen> {
                       child: FilledButton.icon(
                         onPressed: _testing ? null : _testAndSave,
                         icon: _testing
-                            ? const SizedBox(
+                            ? SizedBox(
                                 height: 18,
                                 width: 18,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: Colors.white,
+                                  color: cs.onPrimary,
                                 ),
                               )
                             : const Icon(Icons.check_circle_outline_rounded),
@@ -317,7 +317,7 @@ class _NodeCard extends StatelessWidget {
               child: Icon(
                 isActive ? Icons.wifi_rounded : Icons.wifi_off_rounded,
                 size: 18,
-                color: isActive ? Colors.white : cs.onSurfaceVariant,
+                color: isActive ? cs.onPrimary : cs.onSurfaceVariant,
               ),
             ),
             const SizedBox(width: 12),
@@ -410,7 +410,7 @@ class _SectionLabel extends StatelessWidget {
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
           color: cs.primary,
           fontWeight: FontWeight.w600,
-          letterSpacing: 0.8,
+          letterSpacing: 0,
         ),
       ),
     );

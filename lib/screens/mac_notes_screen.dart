@@ -269,11 +269,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
                     createdAt: DateTime.now(),
                     updatedAt: DateTime.now(),
                   ))
-              .copyWith(
-                title: title,
-                content: content,
-                updatedAt: updatedAt,
-              );
+              .copyWith(title: title, content: content, updatedAt: updatedAt);
     });
     _localSaveTimer?.cancel();
     _localSaveTimer = Timer(
@@ -315,11 +311,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
                     createdAt: DateTime.now(),
                     updatedAt: DateTime.now(),
                   ))
-              .copyWith(
-                title: title,
-                content: content,
-                updatedAt: updatedAt,
-              );
+              .copyWith(title: title, content: content, updatedAt: updatedAt);
     });
   }
 
@@ -396,8 +388,7 @@ class _MacNotesScreenState extends State<MacNotesScreen> {
         _lastRemoteTitle = title;
         _lastRemoteContent = content;
       }
-    } catch (_) {
-    }
+    } catch (_) {}
   }
 
   String get _normalizedTitle {
@@ -989,6 +980,7 @@ class _MacMoveTargetNode extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = cs.brightness == Brightness.dark;
     final bid = collection.bid;
     final isCurrent = bid == currentCollectionBid;
     final isDisabled = disabledBids.contains(bid) || disabledByAncestor;
@@ -1017,14 +1009,16 @@ class _MacMoveTargetNode extends StatelessWidget {
                   height: 28,
                   decoration: BoxDecoration(
                     color: canPick
-                        ? const Color(0xFFFFCC00)
+                        ? _MacPalette.folder(isDark)
                         : cs.onSurfaceVariant.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(7),
                   ),
                   child: Icon(
                     Icons.folder_rounded,
                     size: 17,
-                    color: canPick ? Colors.white : cs.onSurfaceVariant,
+                    color: canPick
+                        ? _MacPalette.onFolder(isDark)
+                        : cs.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1284,13 +1278,12 @@ class _MacSidebarState extends State<_MacSidebar> {
                 buildDefaultDragHandles: false,
                 padding: EdgeInsets.zero,
                 itemCount: children.length,
-                onReorder: (oldIndex, newIndex) =>
-                    _onReorderChildCollections(
-                      collection.bid,
-                      children,
-                      oldIndex,
-                      newIndex,
-                    ),
+                onReorder: (oldIndex, newIndex) => _onReorderChildCollections(
+                  collection.bid,
+                  children,
+                  oldIndex,
+                  newIndex,
+                ),
                 itemBuilder: (context, index) {
                   final child = children[index];
                   return KeyedSubtree(
@@ -1314,9 +1307,9 @@ class _MacSidebarState extends State<_MacSidebar> {
 
   void _onReorderRootCollections(int oldIndex, int newIndex) {
     unawaited(
-      widget.onReorderCollection(oldIndex, newIndex).catchError(
-        (e) => _showCollectionOrderError(e),
-      ),
+      widget
+          .onReorderCollection(oldIndex, newIndex)
+          .catchError((e) => _showCollectionOrderError(e)),
     );
   }
 
@@ -1624,10 +1617,7 @@ class _SidebarCollectionTile extends StatelessWidget {
     );
 
     if (reorderIndex == null) return tile;
-    return ReorderableDragStartListener(
-      index: reorderIndex!,
-      child: tile,
-    );
+    return ReorderableDragStartListener(index: reorderIndex!, child: tile);
   }
 
   Future<void> _showContextMenu(BuildContext context, Offset position) async {
@@ -2267,10 +2257,10 @@ class _NotePinSwipeAction extends StatelessWidget {
     final isDark = Theme.of(context).colorScheme.brightness == Brightness.dark;
     final background = isPinned
         ? _MacPalette.selection(isDark)
-        : const Color(0xFFFF9500);
+        : _MacPalette.accent(isDark);
     final foreground = isPinned
         ? _MacPalette.primaryText(isDark)
-        : Colors.white;
+        : _MacPalette.onAccent(isDark);
 
     return _NoteSwipeIconAction(
       icon: isPinned ? Icons.push_pin : Icons.push_pin_outlined,
@@ -2621,34 +2611,40 @@ class _MacPalette {
   const _MacPalette._();
 
   static Color window(bool dark) =>
-      dark ? const Color(0xFF1A1A1A) : const Color(0xFFF5F4F1);
+      dark ? const Color(0xFF11151C) : const Color(0xFFE6D8BF);
   static Color sidebar(bool dark) =>
-      dark ? const Color(0xFF242424) : const Color(0xFFEDEBE7);
+      dark ? const Color(0xFF11151C) : const Color(0xFFD8C6AA);
   static Color listPane(bool dark) =>
-      dark ? const Color(0xFF1F1F1F) : const Color(0xFFF7F5F0);
+      dark ? const Color(0xFF151B24) : const Color(0xFFE6D8BF);
   static Color editor(bool dark) =>
-      dark ? const Color(0xFF1C1C1C) : const Color(0xFFFFFCF6);
+      dark ? const Color(0xFF11151C) : const Color(0xFFF3EFE6);
   static Color divider(bool dark) =>
-      dark ? const Color(0xFF343434) : const Color(0xFFD8D4CC);
+      dark ? const Color(0xFF313946) : const Color(0xFFB8A78D);
   static Color selection(bool dark) =>
-      dark ? const Color(0xFF3A3A3A) : const Color(0xFFE7DFD2);
+      dark ? const Color(0xFF313946) : const Color(0xFFCDB99A);
   static Color noteSelection(bool dark) =>
-      dark ? const Color(0xFFB98511) : const Color(0xFFD89500);
+      dark ? const Color(0xFFE6D8BF) : const Color(0xFF11151C);
   static Color noteHover(bool dark) =>
-      dark ? const Color(0xFF2B2B2B) : const Color(0xFFEDE7DB);
+      dark ? const Color(0xFF1B212B) : const Color(0xFFD8C6AA);
   static Color accent(bool dark) =>
-      dark ? const Color(0xFFD1A332) : const Color(0xFF9A6A00);
+      dark ? const Color(0xFFC78B62) : const Color(0xFF9B6648);
+  static Color onAccent(bool dark) =>
+      dark ? const Color(0xFF11151C) : const Color(0xFFF3EFE6);
+  static Color folder(bool dark) =>
+      dark ? const Color(0xFFC78B62) : const Color(0xFF9BAE9A);
+  static Color onFolder(bool dark) => const Color(0xFF11151C);
   static Color primaryText(bool dark) =>
-      dark ? const Color(0xFFE9E9E9) : const Color(0xFF26231E);
+      dark ? const Color(0xFFF3EFE6) : const Color(0xFF11151C);
   static Color secondaryText(bool dark) =>
-      dark ? const Color(0xFFB8B8B8) : const Color(0xFF6F6A61);
+      dark ? const Color(0xFFA4A9B3) : const Color(0xFF4E5866);
   static Color tertiaryText(bool dark) =>
-      dark ? const Color(0xFF8F8F8F) : const Color(0xFF9B948A);
+      dark ? const Color(0xFF768190) : const Color(0xFF7B756D);
   static Color icon(bool dark) =>
-      dark ? const Color(0xFFB8B8B8) : const Color(0xFF6E675D);
-  static Color selectedText(bool dark) => Colors.white;
+      dark ? const Color(0xFFA4A9B3) : const Color(0xFF313946);
+  static Color selectedText(bool dark) =>
+      dark ? const Color(0xFF11151C) : const Color(0xFFF3EFE6);
   static Color selectedSecondaryText(bool dark) =>
-      Colors.white.withValues(alpha: 0.78);
+      dark ? const Color(0xFF313946) : const Color(0xFFA4A9B3);
 }
 
 String _relativeDate(DateTime date) {

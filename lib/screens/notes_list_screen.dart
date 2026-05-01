@@ -37,9 +37,9 @@ class _NotesListScreenState extends State<NotesListScreen> {
   void _onProviderUpdate() {
     final block = _provider.latestCollectionBlock;
     if (block != null && !_provider.syncing) {
-      final updated = NoteCollection.fromBlock(block).copyWith(
-        isDefault: widget.collection.isDefault,
-      );
+      final updated = NoteCollection.fromBlock(
+        block,
+      ).copyWith(isDefault: widget.collection.isDefault);
       context.read<CollectionProvider>().addCollection(updated);
     }
   }
@@ -83,7 +83,6 @@ class _NotesListScreenState extends State<NotesListScreen> {
     );
   }
 
-
   void _showInfoDialog(BuildContext context) {
     final ctrl = TextEditingController();
     showDialog<void>(
@@ -119,7 +118,9 @@ class _NotesListScreenState extends State<NotesListScreen> {
       final service = NoteService(context.read<ConnectionProvider>());
       final block = _provider.latestCollectionBlock;
       final existing = block != null && block.data['link_tag'] is List
-          ? List<String>.from((block.data['link_tag'] as List).whereType<String>())
+          ? List<String>.from(
+              (block.data['link_tag'] as List).whereType<String>(),
+            )
           : List<String>.from(widget.collection.linkTags);
       if (!existing.contains(tag)) {
         existing.add(tag);
@@ -128,7 +129,9 @@ class _NotesListScreenState extends State<NotesListScreen> {
       await _provider.loadItems(widget.collection.bid);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('添加失败：$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('添加失败：$e')));
       }
     }
   }
@@ -147,7 +150,8 @@ class _NotesListScreenState extends State<NotesListScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 36, height: 4,
+                width: 36,
+                height: 4,
                 margin: const EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
                   color: cs.onSurfaceVariant.withValues(alpha: 0.3),
@@ -156,7 +160,13 @@ class _NotesListScreenState extends State<NotesListScreen> {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: Text(tag, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                child: Text(
+                  tag,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
               const Divider(height: 1),
               ListTile(
@@ -182,9 +192,14 @@ class _NotesListScreenState extends State<NotesListScreen> {
         title: const Text('删除标签'),
         content: Text('确定要删除标签「$tag」吗？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () {
               Navigator.pop(context);
               _deleteLinkTag(tag);
@@ -201,14 +216,18 @@ class _NotesListScreenState extends State<NotesListScreen> {
       final service = NoteService(context.read<ConnectionProvider>());
       final block = _provider.latestCollectionBlock;
       final existing = block != null && block.data['link_tag'] is List
-          ? List<String>.from((block.data['link_tag'] as List).whereType<String>())
+          ? List<String>.from(
+              (block.data['link_tag'] as List).whereType<String>(),
+            )
           : List<String>.from(widget.collection.linkTags);
       existing.remove(tag);
       await service.updateCollectionLinkTags(widget.collection.bid, existing);
       await _provider.loadItems(widget.collection.bid);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除失败：$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('删除失败：$e')));
       }
     }
   }
@@ -227,7 +246,8 @@ class _NotesListScreenState extends State<NotesListScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 36, height: 4,
+                width: 36,
+                height: 4,
                 margin: const EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
                   color: cs.onSurfaceVariant.withValues(alpha: 0.3),
@@ -236,12 +256,17 @@ class _NotesListScreenState extends State<NotesListScreen> {
               ),
               ListTile(
                 leading: Container(
-                  width: 36, height: 36,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFCC00),
+                    color: cs.secondary,
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: const Icon(Icons.create_new_folder_rounded, color: Colors.white, size: 20),
+                  child: Icon(
+                    Icons.create_new_folder_rounded,
+                    color: cs.onSecondary,
+                    size: 20,
+                  ),
                 ),
                 title: const Text('新建集合'),
                 subtitle: const Text('在当前集合下新建子集合'),
@@ -252,12 +277,17 @@ class _NotesListScreenState extends State<NotesListScreen> {
               ),
               ListTile(
                 leading: Container(
-                  width: 36, height: 36,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     color: cs.primary,
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: const Icon(Icons.folder_shared_rounded, color: Colors.white, size: 20),
+                  child: Icon(
+                    Icons.folder_shared_rounded,
+                    color: cs.onPrimary,
+                    size: 20,
+                  ),
                 ),
                 title: const Text('加入集合'),
                 subtitle: const Text('将当前集合加入到另一个集合'),
@@ -284,10 +314,16 @@ class _NotesListScreenState extends State<NotesListScreen> {
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(labelText: '集合名称', hintText: '输入集合名称'),
+          decoration: const InputDecoration(
+            labelText: '集合名称',
+            hintText: '输入集合名称',
+          ),
         ),
         actions: [
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('创建')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('创建'),
+          ),
         ],
       ),
     );
@@ -295,11 +331,16 @@ class _NotesListScreenState extends State<NotesListScreen> {
     if (!context.mounted) return;
     try {
       final service = NoteService(context.read<ConnectionProvider>());
-      await service.createCollection(ctrl.text.trim(), parentBid: widget.collection.bid);
+      await service.createCollection(
+        ctrl.text.trim(),
+        parentBid: widget.collection.bid,
+      );
       _provider.loadItems(widget.collection.bid);
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('创建失败：$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('创建失败：$e')));
       }
     }
   }
@@ -314,10 +355,16 @@ class _NotesListScreenState extends State<NotesListScreen> {
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(labelText: '目标集合 BID', hintText: '粘贴目标集合的 BID'),
+          decoration: const InputDecoration(
+            labelText: '目标集合 BID',
+            hintText: '粘贴目标集合的 BID',
+          ),
         ),
         actions: [
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('加入')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('加入'),
+          ),
         ],
       ),
     );
@@ -330,12 +377,16 @@ class _NotesListScreenState extends State<NotesListScreen> {
         currentCollectionBid: widget.collection.bid,
       );
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已加入集合')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('已加入集合')));
       }
       _provider.loadItems(widget.collection.bid);
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('加入失败：$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('加入失败：$e')));
       }
     }
   }
@@ -356,7 +407,8 @@ class _NotesListScreenState extends State<NotesListScreen> {
             children: [
               // 拖动条
               Container(
-                width: 36, height: 4,
+                width: 36,
+                height: 4,
                 margin: const EdgeInsets.only(bottom: 4),
                 decoration: BoxDecoration(
                   color: cs.onSurfaceVariant.withValues(alpha: 0.3),
@@ -368,7 +420,10 @@ class _NotesListScreenState extends State<NotesListScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
                 child: Text(
                   item.title,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -382,7 +437,10 @@ class _NotesListScreenState extends State<NotesListScreen> {
                   Navigator.pop(sheetCtx);
                   Clipboard.setData(ClipboardData(text: item.bid));
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('BID 已复制'), duration: Duration(seconds: 2)),
+                    const SnackBar(
+                      content: Text('BID 已复制'),
+                      duration: Duration(seconds: 2),
+                    ),
                   );
                 },
               ),
@@ -438,7 +496,10 @@ class _NotesListScreenState extends State<NotesListScreen> {
   }
 
   /// 将 item 移动到目标集合（修改 link 字段）
-  Future<void> _moveItemToCollection(NoteListItem item, NoteCollection target) async {
+  Future<void> _moveItemToCollection(
+    NoteListItem item,
+    NoteCollection target,
+  ) async {
     try {
       final service = NoteService(context.read<ConnectionProvider>());
       await service.moveItemToCollection(
@@ -447,14 +508,16 @@ class _NotesListScreenState extends State<NotesListScreen> {
         targetCollectionBid: target.bid,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已移动到「${target.title}」')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('已移动到「${target.title}」')));
         _provider.loadItems(widget.collection.bid);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('移动失败：$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('移动失败：$e')));
       }
     }
   }
@@ -467,9 +530,14 @@ class _NotesListScreenState extends State<NotesListScreen> {
         title: const Text('删除'),
         content: Text('确定要删除「${item.title}」吗？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('删除'),
           ),
@@ -480,24 +548,31 @@ class _NotesListScreenState extends State<NotesListScreen> {
       try {
         await _provider.deleteNote(item.bid);
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除失败：$e')));
+        if (mounted)
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('删除失败：$e')));
       }
     }
   }
 
   /// 集合区 + 文档区分开渲染
   Widget _buildList(BuildContext context, ColorScheme cs) {
-    final collections = _provider.items.whereType<NoteListItemCollection>().toList();
+    final collections = _provider.items
+        .whereType<NoteListItemCollection>()
+        .toList();
     final notes = _provider.items.whereType<NoteListItemNote>().toList();
     final widgets = <Widget>[];
 
     if (collections.isNotEmpty) {
       widgets.add(const _SectionHeader(label: '集合'));
-      widgets.add(_CollectionGroup(
-        collections: collections.map((e) => e.collection).toList(),
-        onTap: _openSubCollection,
-        onLongPress: (col) => _showItemActions(NoteListItemCollection(col)),
-      ));
+      widgets.add(
+        _CollectionGroup(
+          collections: collections.map((e) => e.collection).toList(),
+          onTap: _openSubCollection,
+          onLongPress: (col) => _showItemActions(NoteListItemCollection(col)),
+        ),
+      );
       widgets.add(const SizedBox(height: 24));
     }
 
@@ -506,13 +581,15 @@ class _NotesListScreenState extends State<NotesListScreen> {
       for (var i = 0; i < notes.length; i++) {
         final note = notes[i].note;
         final item = notes[i];
-        widgets.add(_NoteRow(
-          note: note,
-          isFirst: i == 0,
-          isLast: i == notes.length - 1,
-          onTap: () => _openNote(note),
-          onDelete: () => _showItemActions(item),
-        ));
+        widgets.add(
+          _NoteRow(
+            note: note,
+            isFirst: i == 0,
+            isLast: i == notes.length - 1,
+            onTap: () => _openNote(note),
+            onDelete: () => _showItemActions(item),
+          ),
+        );
       }
     }
 
@@ -525,7 +602,7 @@ class _NotesListScreenState extends State<NotesListScreen> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final bgColor = cs.brightness == Brightness.dark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
+    final bgColor = Theme.of(context).scaffoldBackgroundColor;
 
     return PopScope(
       onPopInvokedWithResult: (didPop, _) {
@@ -575,16 +652,27 @@ class _NotesListScreenState extends State<NotesListScreen> {
                       children: [
                         Text(
                           widget.collection.title,
-                          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -0.5),
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0,
+                          ),
                         ),
                         // link_tag 显示
-                        _LinkTagsRow(provider: _provider, collection: widget.collection, collectionBid: widget.collection.bid, onLongPressTag: _onLongPressTag),
+                        _LinkTagsRow(
+                          provider: _provider,
+                          collection: widget.collection,
+                          collectionBid: widget.collection.bid,
+                          onLongPressTag: _onLongPressTag,
+                        ),
                       ],
                     ),
                   ),
                 ),
                 if (_provider.isLoading)
-                  const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
+                  const SliverFillRemaining(
+                    child: Center(child: CircularProgressIndicator()),
+                  )
                 else if (_provider.state == NoteLoadState.error)
                   SliverFillRemaining(
                     child: _ErrorView(
@@ -626,7 +714,7 @@ class _SectionHeader extends StatelessWidget {
           fontSize: 13,
           fontWeight: FontWeight.w600,
           color: cs.onSurfaceVariant,
-          letterSpacing: 0.3,
+          letterSpacing: 0,
         ),
       ),
     );
@@ -648,10 +736,14 @@ class _CollectionGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final cardColor = cs.brightness == Brightness.dark ? const Color(0xFF2C2C2E) : Colors.white;
+    final cardColor = cs.surfaceContainerLow;
 
     return Container(
-      decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
+      ),
       child: Column(
         children: [
           for (var i = 0; i < collections.length; i++) ...[
@@ -663,7 +755,11 @@ class _CollectionGroup extends StatelessWidget {
               onLongPress: () => onLongPress(collections[i]),
             ),
             if (i < collections.length - 1)
-              Divider(height: 1, indent: 52, color: cs.outlineVariant.withValues(alpha: 0.4)),
+              Divider(
+                height: 1,
+                indent: 52,
+                color: cs.outlineVariant.withValues(alpha: 0.4),
+              ),
           ],
         ],
       ),
@@ -700,12 +796,17 @@ class _CollectionTile extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 28, height: 28,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
-                color: const Color(0xFFFFCC00),
+                color: cs.secondary,
                 borderRadius: BorderRadius.circular(7),
               ),
-              child: const Icon(Icons.folder_rounded, color: Colors.white, size: 17),
+              child: Icon(
+                Icons.folder_rounded,
+                color: cs.onSecondary,
+                size: 17,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -716,8 +817,11 @@ class _CollectionTile extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            Icon(Icons.chevron_right_rounded, size: 20,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
           ],
         ),
       ),
@@ -744,7 +848,7 @@ class _NoteRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final cardColor = cs.brightness == Brightness.dark ? const Color(0xFF2C2C2E) : Colors.white;
+    final cardColor = cs.surfaceContainerLow;
 
     return Container(
       decoration: BoxDecoration(
@@ -770,7 +874,10 @@ class _NoteRow extends StatelessWidget {
                 children: [
                   Text(
                     note.title,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -779,14 +886,20 @@ class _NoteRow extends StatelessWidget {
                     children: [
                       Text(
                         note.formattedDate,
-                        style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: cs.onSurfaceVariant,
+                        ),
                       ),
                       if (note.preview.isNotEmpty) ...[
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             note.preview,
-                            style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: cs.onSurfaceVariant,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -799,7 +912,11 @@ class _NoteRow extends StatelessWidget {
             ),
           ),
           if (!isLast)
-            Divider(height: 1, indent: 16, color: cs.outlineVariant.withValues(alpha: 0.4)),
+            Divider(
+              height: 1,
+              indent: 16,
+              color: cs.outlineVariant.withValues(alpha: 0.4),
+            ),
         ],
       ),
     );
@@ -841,13 +958,24 @@ class _EmptyView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.note_alt_outlined, size: 56,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+          Icon(
+            Icons.note_alt_outlined,
+            size: 56,
+            color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
           const SizedBox(height: 12),
-          Text('还没有内容', style: TextStyle(fontSize: 16, color: cs.onSurfaceVariant)),
+          Text(
+            '还没有内容',
+            style: TextStyle(fontSize: 16, color: cs.onSurfaceVariant),
+          ),
           const SizedBox(height: 4),
-          Text('点击右下角按钮新建',
-              style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
+          Text(
+            '点击右下角按钮新建',
+            style: TextStyle(
+              fontSize: 13,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+            ),
+          ),
         ],
       ),
     );
@@ -874,8 +1002,12 @@ class _LinkTagsRow extends StatelessWidget {
     final block = provider.latestCollectionBlock;
     final tags = block != null
         ? (block.data['link_tag'] is List
-            ? List<String>.from((block.data['link_tag'] as List).whereType<String>().where((t) => t.trim().isNotEmpty))
-            : <String>[])
+              ? List<String>.from(
+                  (block.data['link_tag'] as List).whereType<String>().where(
+                    (t) => t.trim().isNotEmpty,
+                  ),
+                )
+              : <String>[])
         : collection.linkTags;
 
     if (tags.isEmpty) return const SizedBox.shrink();
@@ -893,7 +1025,7 @@ class _LinkTagsRow extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.w600,
               color: cs.onSurfaceVariant,
-              letterSpacing: 0.4,
+              letterSpacing: 0,
             ),
           ),
           const SizedBox(height: 6),
@@ -907,7 +1039,10 @@ class _LinkTagsRow extends StatelessWidget {
                 onLongPress: () => onLongPressTag?.call(tag),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: isActive
                         ? cs.primary
@@ -944,7 +1079,7 @@ class _CollectionPickerSheet extends StatefulWidget {
     required this.onPick,
   });
   final ScrollController scrollController;
-  final String currentBid;           // 被移动的 item 的 bid（不能选自己）
+  final String currentBid; // 被移动的 item 的 bid（不能选自己）
   final String currentCollectionBid; // 当前所在集合（标注"当前"）
   final void Function(NoteCollection) onPick;
 
@@ -1003,7 +1138,8 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
     return Column(
       children: [
         Container(
-          width: 36, height: 4,
+          width: 36,
+          height: 4,
           margin: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: cs.onSurfaceVariant.withValues(alpha: 0.3),
@@ -1014,7 +1150,11 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
           child: Text(
             '移动',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: cs.onSurface),
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              color: cs.onSurface,
+            ),
           ),
         ),
         const Divider(height: 1),
@@ -1088,16 +1228,19 @@ class _CollectionPickerNode extends StatelessWidget {
             child: Row(
               children: [
                 Container(
-                  width: 28, height: 28,
+                  width: 28,
+                  height: 28,
                   decoration: BoxDecoration(
                     color: (isCurrent || isSelf)
                         ? cs.onSurfaceVariant.withValues(alpha: 0.15)
-                        : const Color(0xFFFFCC00),
+                        : cs.secondary,
                     borderRadius: BorderRadius.circular(7),
                   ),
                   child: Icon(
                     Icons.folder_rounded,
-                    color: (isCurrent || isSelf) ? cs.onSurfaceVariant : Colors.white,
+                    color: (isCurrent || isSelf)
+                        ? cs.onSurfaceVariant
+                        : cs.onSecondary,
                     size: 17,
                   ),
                 ),
@@ -1118,7 +1261,13 @@ class _CollectionPickerNode extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                       if (isCurrent)
-                        Text('当前集合', style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
+                        Text(
+                          '当前集合',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1131,7 +1280,8 @@ class _CollectionPickerNode extends StatelessWidget {
                       behavior: HitTestBehavior.opaque,
                       onTap: () => onToggle(bid),
                       child: SizedBox(
-                        width: 36, height: 36,
+                        width: 36,
+                        height: 36,
                         child: Center(
                           child: AnimatedRotation(
                             turns: isExpanded ? 0.25 : 0,
@@ -1166,7 +1316,11 @@ class _CollectionPickerNode extends StatelessWidget {
               onPick: onPick,
             ),
         if (depth == 0)
-          Divider(height: 1, indent: 16, color: cs.outlineVariant.withValues(alpha: 0.3)),
+          Divider(
+            height: 1,
+            indent: 16,
+            color: cs.outlineVariant.withValues(alpha: 0.3),
+          ),
       ],
     );
   }

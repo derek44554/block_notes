@@ -52,9 +52,9 @@ class AboutScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.note_alt_rounded,
-                    color: Colors.white,
+                    color: cs.onPrimary,
                     size: 44,
                   ),
                 ),
@@ -120,7 +120,7 @@ class AboutScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _LinkTile(
               icon: Icons.code_rounded,
-              iconColor: const Color(0xFF333333),
+              iconColor: cs.onSurface,
               label: 'GitHub',
               url: _github,
             ),

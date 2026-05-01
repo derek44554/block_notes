@@ -148,7 +148,7 @@ class _SectionLabel extends StatelessWidget {
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
           color: cs.primary,
           fontWeight: FontWeight.w600,
-          letterSpacing: 0.8,
+          letterSpacing: 0,
         ),
       ),
     );
